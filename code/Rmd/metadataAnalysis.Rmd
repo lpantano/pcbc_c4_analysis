@@ -1,0 +1,94 @@
+
+```{r load}
+library(reshape)
+library(dplyr)
+library(synapseClient)
+library("pheatmap")
+library(ggplot2)
+library(DESeq2)
+library("corrplot")
+synapseLogin()
+source("methods.R")
+meta = get_metadata("syn3156503")
+```
+
+
+```{r summary}
+meta_f = apply(meta, 2, function(x){
+    if (is.character(x)){
+        x = as.factor(x)
+    }
+    x
+})
+# summary(meta_f)
+
+```
+
+## summary
+
+```{r pheatmap}
+ggplot(meta)+
+    geom_bar(aes(x=Cell_Type,fill=Cell_Line_Type)) +
+    facet_wrap(~Gender)
+   
+ggplot(meta)+
+    geom_bar(aes(x=Cell_Type,fill=Cell_Type_of_Origin)) +
+    facet_wrap(~Gender)
+  
+ggplot(meta)+
+    geom_bar(aes(x=Cell_Type,fill=Tissue_of_Origin)) +
+    facet_wrap(~Gender)
+
+ggplot(meta)+
+    geom_bar(aes(x=Cell_Type_of_Origin,fill=Tissue_of_Origin)) +
+    facet_wrap(~Gender) + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+ggplot(meta)+
+    geom_bar(aes(x=Reprogramming_Vector_Type,fill=Tissue_of_Origin)) +
+    facet_wrap(~Gender) + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+## Correlation among some metadata variables
+
+```{r cor}
+get_cor = function(v){
+    v=as.character(v)
+    x = as.factor(meta[,v[1]])
+    y = as.factor(meta[,v[2]])
+    dd = data.frame(x=x,y=y)
+    dd = dd[rowSums(is.na(dd))==0,]
+    sm = chisq.test(y, x)
+    r= assocstats(xtabs(~x+y,data=dd))$cramer
+    pval = sm$p.value
+    list(r,pval)
+}
+
+cols = c("lane","index","Tissue_of_Origin","Cell_Type_of_Origin","Cell_Type","Reprogramming_Vector_Type",
+         "Reprogramming_Gene_Combination","Gender","Cell_Line_Type")
+cols_format = sub("_","\n",cols)
+
+comp = expand.grid(cols,cols)
+c = apply(comp,1,get_cor)
+res = cbind(comp,do.call(rbind,c))
+names(res)[3:4] = c("cor","pvalue")
+
+cor_mat = tidyr::spread(res[,c(1,2,3)],"Var1","cor")
+cor_mat = cor_mat[,2:ncol(cor_mat)]
+cor_mat = matrix(unlist(cor_mat),nrow=9)
+row.names(cor_mat) = cols_format
+colnames(cor_mat) = cols_format
+
+pval_mat = tidyr::spread(res[,c(1,2,4)],"Var1","pvalue")
+pval_mat = pval_mat[,2:ncol(pval_mat)]
+pval_mat = matrix(unlist(pval_mat), nrow=9)
+row.names(pval_mat) = cols_format
+colnames(pval_mat) = cols_format
+
+corrplot(cor_mat, p.mat = pval_mat, ,method = 'number', insig = "blank", is.corr=TRUE,sig.level = 0.05,tl.cex = 0.7, cl.cex=0.7)
+
+
+
+```
+
