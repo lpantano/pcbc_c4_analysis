@@ -12,6 +12,11 @@ library("CHBUtils")
 synapseLogin()
 source("methods.R")
 meta = get_metadata("syn3156503")
+
+# Add donor ID
+meta$Donor_ID <- meta$High_Confidence_Donor_ID
+naDonors <- which(meta$Donor_ID == "N/A")
+meta$Donor_ID[naDonors] <- 1:length(naDonors)
 ```
 
 
@@ -72,7 +77,8 @@ get_cor = function(v){
 }
 
 cols = c("lane","index","Tissue_of_Origin","Cell_Type_of_Origin","Cell_Type","Reprogramming_Vector_Type",
-         "Reprogramming_Gene_Combination","Gender","Cell_Line_Type","Donor_Life_Stage","Diffname_short")
+         "Reprogramming_Gene_Combination","Gender","Cell_Line_Type","Donor_Life_Stage","Diffname_short", 
+         "Donor_ID")
 cols_format = sub("_","\n",cols)
 
 comp = expand.grid(cols,cols)
@@ -82,13 +88,13 @@ names(res)[3:4] = c("cor","pvalue")
 
 cor_mat = tidyr::spread(res[,c(1,2,3)],"Var1","cor")
 cor_mat = cor_mat[,2:ncol(cor_mat)]
-cor_mat = matrix(unlist(cor_mat),nrow=11)
+cor_mat = matrix(unlist(cor_mat),nrow=length(cols))
 row.names(cor_mat) = cols_format
 colnames(cor_mat) = cols_format
 
 pval_mat = tidyr::spread(res[,c(1,2,4)],"Var1","pvalue")
 pval_mat = pval_mat[,2:ncol(pval_mat)]
-pval_mat = matrix(unlist(pval_mat), nrow=11)
+pval_mat = matrix(unlist(pval_mat), nrow=length(cols))
 row.names(pval_mat) = cols_format
 colnames(pval_mat) = cols_format
 
