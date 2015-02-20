@@ -1,43 +1,60 @@
 ---
-title: "C4 Count Matrix Data Retrieval"
-author: "Kenneth Daily"
+title: "miRNA descriptive analysis"
+author: "Lorena Pantano"
 date: "02/09/2015"
 output: html_document
 ---
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE}
-library(reshape)
-library(plyr)
+library(tidyr)
 library(dplyr)
-library(xtable)
 library(knitr)
 library(synapseClient)
-library(limma)
-library(edgeR)
+library(DESeq2)
+library(vcd)
+library(CHBUtils)
 
 synapseLogin()
 
 options(xtable.type="html")
 
 knitr::opts_chunk$set(
-  echo=FALSE,
+  echo=TRUE,
   warning=FALSE,
   message=FALSE,
   error = FALSE,
   tidy = FALSE)
 ```
 
-Get the count matrix.
+# Load Data
+
+## Get metadata and count matrix 
+
+```{r get-id}
+Query <- "select id,UID,name,fileType,dataType from file where name=='Summarized miRNA Counts' AND  projectId=='syn1773109'"
+res <- synQuery(Query)
+mat_file = synGet(res$file.id)
+
+Query <- "select id,UID,name,fileType,dataType from file where name=='miRNA metadata' AND  projectId=='syn1773109'"
+res <- synQuery(Query)
+meta_file = synGet(res$file.id)
+
+```
+
+
+## Clean and sync tables
 
 ```{r getcountmat}
-meta = read.table("../../data/miR-All-Samples-OntologyMeta-QC-DATA2.tsv",header=1,row.names=1,sep="\t")
+meta = read.table(meta_file@filePath,header=1,row.names=1,sep="\t")
 row.names(meta) = gsub("-",".",row.names(meta))
-mat = read.table("../../data/PCBC_public_good_mir.tsv",header=T,row.names=1,sep="\t")
+mat = read.table(mat_file@filePath,header=T,row.names=1,sep="\t")
 
 meta_clean = meta[ row.names(meta) %in% colnames(mat), ]
 mat = mat[,as.character(row.names(meta_clean))]
 mat[is.na(mat)] = 0
 ```
+
+# Results
 
 ## Correlation of metadata variables
 
@@ -86,7 +103,6 @@ corrplot(cor_mat, p.mat = pval_mat, ,method = 'number', insig = "blank", is.corr
 ```{r deseq2}
 dds = DESeqDataSetFromMatrix(mat[rowMeans(mat)>5,],colData = meta_clean, design =~1)
 rlogMat = rlog(dds, blind= TRUE)
-
 ```
 
 
@@ -99,11 +115,11 @@ plotPCA(rlogMat, intgroup = "Reprogramming.Gene.Combination", ntop=200)
 plotPCA(rlogMat, intgroup = "Cell.Line.Type", ntop=200)
 plotPCA(rlogMat, intgroup = "CellDiffState", ntop=200)
 plotPCA(rlogMat, intgroup = "GroupLevel1.DifferentiationState", ntop=200)
-plotPCA(rlogMat, intgroup = "GroupLevel2.DifferentiationState", ntop=200)
+plotPCA(rlogMat, intgroup = "GroupLevel3.DifferentiationState", ntop=200)
 
 
 plotPCA(rlogMat, intgroup = "Donor.Life.Stage", ntop=200)
 plotPCA(rlogMat, intgroup = "GroupLevel2.DifferentiationState", ntop=200)
-
 ```
+
 
