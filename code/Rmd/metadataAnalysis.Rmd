@@ -7,6 +7,8 @@ library("pheatmap")
 library(ggplot2)
 library(DESeq2)
 library("corrplot")
+library("vcd")
+library("CHBUtils")
 synapseLogin()
 source("methods.R")
 meta = get_metadata("syn3156503")
@@ -48,6 +50,10 @@ ggplot(meta)+
     geom_bar(aes(x=Reprogramming_Vector_Type,fill=Tissue_of_Origin)) +
     facet_wrap(~Gender) + theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
+ggplot(meta)+
+    geom_bar(aes(x=Donor_Life_Stage,fill=Tissue_of_Origin)) +
+    facet_wrap(~Gender) + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
 ```
 
 ## Correlation among some metadata variables
@@ -66,7 +72,7 @@ get_cor = function(v){
 }
 
 cols = c("lane","index","Tissue_of_Origin","Cell_Type_of_Origin","Cell_Type","Reprogramming_Vector_Type",
-         "Reprogramming_Gene_Combination","Gender","Cell_Line_Type")
+         "Reprogramming_Gene_Combination","Gender","Cell_Line_Type","Donor_Life_Stage","Diffname_short")
 cols_format = sub("_","\n",cols)
 
 comp = expand.grid(cols,cols)
@@ -76,19 +82,76 @@ names(res)[3:4] = c("cor","pvalue")
 
 cor_mat = tidyr::spread(res[,c(1,2,3)],"Var1","cor")
 cor_mat = cor_mat[,2:ncol(cor_mat)]
-cor_mat = matrix(unlist(cor_mat),nrow=9)
+cor_mat = matrix(unlist(cor_mat),nrow=11)
 row.names(cor_mat) = cols_format
 colnames(cor_mat) = cols_format
 
 pval_mat = tidyr::spread(res[,c(1,2,4)],"Var1","pvalue")
 pval_mat = pval_mat[,2:ncol(pval_mat)]
-pval_mat = matrix(unlist(pval_mat), nrow=9)
+pval_mat = matrix(unlist(pval_mat), nrow=11)
 row.names(pval_mat) = cols_format
 colnames(pval_mat) = cols_format
 
 corrplot(cor_mat, p.mat = pval_mat, ,method = 'number', insig = "blank", is.corr=TRUE,sig.level = 0.05,tl.cex = 0.7, cl.cex=0.7)
+```
 
 
+## PCA
+
+```{r pca}
+countMatFile <- synGet("syn3164570")
+countMat <- read.delim(countMatFile@filePath, row.names="Geneid", check.names=FALSE)
+countMat <- as.matrix(countMat)
+
+# get only samples in countMat
+meta_clean = meta[ row.names(meta) %in% colnames(countMat), ]
+# same order in both data
+countMat = countMat[,as.character(row.names(meta_clean))]
+countMat[is.na(countMat)] = 0
+
+dds = DESeqDataSetFromMatrix(countMat[rowMeans(countMat)>5,],colData = meta_clean, design =~1)
+rlogMat = rlog(dds, blind= TRUE)
+# load("../../data/mRNA_rlog.dat")
+
+DESeq2::plotPCA(rlogMat, intgroup = "Cell_Type_of_Origin", ntop=100)
+DESeq2::plotPCA(rlogMat, intgroup = "Tissue_of_Origin", ntop=100)
+DESeq2::plotPCA(rlogMat, intgroup = "Cell_Line_of_Origin", ntop=100)
+DESeq2::plotPCA(rlogMat, intgroup = "Cell_Type", ntop=100)
+
+
+DESeq2::plotPCA(rlogMat, intgroup = "Donor_Life_Stage", ntop=100)
+DESeq2::plotPCA(rlogMat, intgroup = "Gender", ntop=100)
+
+```
+
+```{r mds}
+mds(assay(rlogMat), d="cor", condition = meta_clean$Donor_Life_Stage)
+mds(assay(rlogMat), d="cor", condition = meta_clean$Gender)
+```
+
+```{r pheatmap}
+pheatmap(cor(assay(rlogMat)), annotation = meta_clean[,c("Donor_Life_Stage", "Gender","Tissue_of_Origin","Diffname_short")],show_rownames = F, show_colnames = F)
+summary(as.factor(meta_clean$Diffname_short))
+meta_clean$Diffname_short_sum = "Others"
+x = c("BronchSmoothMuscl","BronchioEpithel","CardiacMyocyte","CardioEndothel",
+      "Lung Fibroblast","PulmonMicrovasc","DE","EB","ECTO","MESO-15","MESO-30",
+      "MESO-5","SC")
+y = c("Bronchio","Bronchio","Cardio","Cardio","Lung","Lung","DE","EB","ECTO",
+      "MESO-15","MESO-30","MESO-5","SC")
+for (i in 1:length(x)){
+    meta_clean$Diffname_short_sum[meta_clean$Diffname_short==x[i]] = y[i]
+}
+pheatmap(cor(assay(rlogMat)), annotation = meta_clean[,c("Donor_Life_Stage", "Gender","Tissue_of_Origin","Diffname_short_sum")],show_rownames = F, show_colnames = F)
+
+samples = meta_clean %>% filter( !grepl("Others",Diffname_short_sum) &
+                                     !grepl("Bronch",Diffname_short_sum) &
+                                     !grepl("Cardio",Diffname_short_sum) &
+                                     !grepl("Lung",Diffname_short_sum) )
+rownames(samples) = samples$UID
+
+ann_col = rainbow(6)
+
+pheatmap(cor(assay(rlogMat)[,rownames(samples)]), annotation = samples[,c("Diffname_short_sum","Gender")],show_rownames = F, show_colnames = F,drop_levels = TRUE)
 
 ```
 
