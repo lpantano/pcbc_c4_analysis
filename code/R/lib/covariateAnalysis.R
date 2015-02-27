@@ -1,4 +1,10 @@
 # Utility Functions
+require(ctv)
+require(psych)
+require(ggplot2)
+require(edgeR)
+require(RColorBrewer)
+require(reshape2)
 
 # Function to find PC and significant covariates
 findPCandSigCovariates <- function(GenesBySamples,SamplesByCovariates,minPCsdev){

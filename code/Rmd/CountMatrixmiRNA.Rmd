@@ -12,9 +12,14 @@ library(knitr)
 library(synapseClient)
 library(DESeq2)
 library(vcd)
+library(limma)
+library(reshape2)
+library(gplots)
+library(RColorBrewer)
+library(corrplot)
+
 source("../R/lib/qc.R")
 source("../R/lib/covariateAnalysis.R")
-library(corrplot)
 
 synapseLogin()
 
