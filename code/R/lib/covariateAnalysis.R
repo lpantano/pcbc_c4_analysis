@@ -1,19 +1,5 @@
-# Load required libraries
-library('synapseClient')
-library('limma')
-library('edgeR')
-library('RColorBrewer')
-library('ctv')
-library('ggplot2')
-library('psych')
-library('reshape2')
-library('gplots')
+# Utility Functions
 
-
-
-###########################################################################################################################
-#### Utility Functions ####
-###########################################################################################################################
 # Function to find PC and significant covariates
 findPCandSigCovariates <- function(GenesBySamples,SamplesByCovariates,minPCsdev){
     # Find PCA
@@ -308,8 +294,8 @@ calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, ti
     markSignificantCorrelations = corMatFDRthreshFunc(cor_mat, indicesMask=calcFDRrows, MAX_FDR = 0.1)
     significantCorrelatedCovars = sort(unique(cor_mat$COVAR[markSignificantCorrelations]))
 
+    # avoid error when PLOT_ALL_COVARS = FALSE, and no significant results
     if (sum(markSignificantCorrelations) > 0  | PLOT_ALL_COVARS==TRUE){
-
         markPotentialSignificantCorrelations = corMatFDRthreshFunc(cor_mat)
         # Specially mark only those incomplete covariates that would be significant in the context of all covariates:
         markPotentialSignificantCorrelations = markPotentialSignificantCorrelations & !calcFDRrows
@@ -336,26 +322,42 @@ calcCompleteCorAndPlot <- function(COMPARE_data, COVAR_data, correlationType, ti
     }
 }
 
+# Function to run principal component analysis
+runPCA <- function(genesBySamples, SCALE_DATA_FOR_PCA = TRUE, MIN_PVE_PCT_PC = 1.0) {
+
+    # estimate variance in data by PC:
+    pca.res <- prcomp(t(genesBySamples), center=TRUE, scale.=SCALE_DATA_FOR_PCA, retx=TRUE)
+
+    # examine how much variance is explained by PCs, and consider those with PVE >= (MIN_PVE_PCT_PC %):
+    pc.var <- pca.res$sdev^2
+    pve <- 100 * (pc.var / sum(pc.var))
+    npca <- max(1,length(which(pve >= MIN_PVE_PCT_PC)))
+
+    samplePCvals <- pca.res$x[, 1:npca, drop=FALSE]
+
+    list(samplePCvals=samplePCvals, pve=pve)
+}
+
 # Function to run principal component analysis and plot correlations
 runPCAandPlotCorrelations <- function(genesBySamples, samplesByCovariates, dataName, isKeyPlot=FALSE,
                                       SCALE_DATA_FOR_PCA = TRUE, MIN_PVE_PCT_PC = 1.0, CORRELATION_TYPE = "pearson",
-                                      ALSO_PLOT_ALL_COVARS_VS_PCA = TRUE, MAX_NUM_LEVELS_PER_COVAR = 10, MAX_FDR = 0.1) {
+                                      ALSO_PLOT_ALL_COVARS_VS_PCA = TRUE, MAX_NUM_LEVELS_PER_COVAR = 10) {
     title = paste(ifelse(SCALE_DATA_FOR_PCA, "S", "Un-s"), "caled ", dataName, " ", " data in PCA; PVE >= ", MIN_PVE_PCT_PC, "%; ", CORRELATION_TYPE, " correlations ", sep="")
     writeLines(paste("\nRunning PCA and calculating correlations for:\n", title, sep=""))
 
-    # estimate variance in data by PC:
-    pca.res = prcomp(t(genesBySamples), center=TRUE, scale.=SCALE_DATA_FOR_PCA, retx=TRUE)
+    pcaRes <- runPCA(genesBySamples=genesBySamples, SCALE_DATA_FOR_PCA=SCALE_DATA_FOR_PCA,
+                     MIN_PVE_PCT_PC=MIN_PVE_PCT_PC)
 
-    # examine how much variance is explained by PCs, and consider those with PVE >= (MIN_PVE_PCT_PC %):
-    pc.var = pca.res$sdev^2
-    pve = 100 * (pc.var / sum(pc.var))
-    npca = max(1,length(which(pve >= MIN_PVE_PCT_PC)))
+    samplePCvals <- pcaRes$samplePCvals
+    pve <- pcaRes$pve
 
-    samplePCvals = pca.res$x[, 1:npca, drop=FALSE]
+    npca <- ncol(samplePCvals)
+
     colnames(samplePCvals) = paste(colnames(samplePCvals), " (", sprintf("%.2f", pve[1:npca]), "%)", sep="")
 
     # Find covariates without any missing data
-    samplesByFullCovariates = samplesByCovariates[, which(apply(samplesByCovariates, 2, function(dat) all(!is.na(dat))))]
+    samplesByFullCovariates = samplesByCovariates[, which(apply(samplesByCovariates, 2,
+                                                                function(dat) all(!is.na(dat))))]
     EXCLUDE_VARS_FROM_FDR = setdiff(colnames(samplesByCovariates), colnames(samplesByFullCovariates))
 
     add_PC_res = list()
@@ -365,17 +367,12 @@ runPCAandPlotCorrelations <- function(genesBySamples, samplesByCovariates, dataN
     if (ALSO_PLOT_ALL_COVARS_VS_PCA) { LOOP_PLOT_ALL_COVARS = unique(c(LOOP_PLOT_ALL_COVARS, TRUE)) }
 
     for (PLOT_ALL_COVARS in LOOP_PLOT_ALL_COVARS) {
-        corrRes = calcCompleteCorAndPlot(samplePCvals, samplesByCovariates, CORRELATION_TYPE, title, PLOT_ALL_COVARS, EXCLUDE_VARS_FROM_FDR, MAX_FDR)
+        corrRes = calcCompleteCorAndPlot(samplePCvals, samplesByCovariates, CORRELATION_TYPE, title, PLOT_ALL_COVARS, EXCLUDE_VARS_FROM_FDR)
         add_PC_res[[length(add_PC_res)+1]] = list(plotData=corrRes$plot, isKeyPlot=(isKeyPlot && !PLOT_ALL_COVARS))
         if (!PLOT_ALL_COVARS) {
             significantCovars = corrRes$significantCovars
         }
     }
 
-    #PC_res <<- c(PC_res, add_PC_res)
-
-    return(list(signCov=significantCovars, plots=add_PC_res))
+    return(list(significantCovars=significantCovars, PC_res=add_PC_res))
 }
-###########################################################################################################################
-
-

@@ -13,7 +13,7 @@ library(synapseClient)
 library(DESeq2)
 library(vcd)
 source("../R/lib/qc.R")
-source("../R/lib/covariates.R")
+source("../R/lib/covariateAnalysis.R")
 library(corrplot)
 
 synapseLogin()
@@ -226,7 +226,7 @@ VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, pl
 DM = getDesignMatrix(meta_clean[,c(FactorCovariates)],FactorCovariates)
 
 preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DM$design, 'NULL design(voom-normalized)',isKeyPlot=TRUE)
-preAdjustedSigCovars$plots[[1]]$plotData + theme(axis.text.x=element_text(size=10))
+preAdjustedSigCovars$PC_res[[1]]$plotData + theme(axis.text.x=element_text(size=10))
 
 # Re-normalise with COVARIATES desing matrix
 DM = getDesignMatrix(meta_clean[,c('Diffname_short','run','Tissue_of_Origin','Donor_Life_Stage','Gender')],FactorCovariates)
@@ -234,7 +234,7 @@ VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design
 
 # Find PC of re-adjusted gene expression and significant covariates that are highly correlated with PCs
 postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$E, DM$design, 'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
-postAdjustedSigCovars$plots[[1]]$plotData + theme(axis.text.x=element_text(size=10))
+postAdjustedSigCovars$PC_res[[1]]$plotData + theme(axis.text.x=element_text(size=10))
 ```
 
 
@@ -244,8 +244,8 @@ variation in the model?
 ```{r cor-res}
 # Find PC of residual gene expression and significant covariates that are highly correlated with PCs
 result.lm = lm(t(VOOM.ADJUSTED.GENE_EXPRESSION$E) ~ 0 + DM$design)
-resAdjustedSigCovars = runPCAandPlotCorrelations(t(result.lm$residuals), DM$design, 'residual',isKeyPlot=TRUE, MAX_FDR=1)
+resAdjustedSigCovars = runPCAandPlotCorrelations(t(result.lm$residuals), DM$design, 'residual',isKeyPlot=TRUE)
 
-resAdjustedSigCovars$plots[[2]]$plotData
+resAdjustedSigCovars$PC_res[[2]]$plotData
 ```
 
