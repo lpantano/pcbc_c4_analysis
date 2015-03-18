@@ -1,0 +1,364 @@
+# metadata and covariates
+
+```{r meta}
+library(tidyr)
+library(dplyr)
+library(knitr)
+library(synapseClient)
+library(DESeq2)
+library(vcd)
+library(limma)
+library(reshape2)
+library(gplots)
+library(ggplot2)
+library(RColorBrewer)
+library(corrplot)
+library(pheatmap)
+
+source("~/repos/pcbc_c4_analysis/code/R/lib/qc.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
+
+synapseLogin()
+
+# Get metadata
+metadata_id = "syn3219876"
+metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
+metadata = metadata_obj@values %>% distinct(UID)
+row.names(metadata) = metadata$UID
+
+#mat_id = "syn3332915"
+#mat_obj =  synGet(id=mat_id, load=T)
+#mat = mat_obj@values 
+mat = read.csv("~/repos/pcbc_c4_analysis/data/mirna.csv", check.names = FALSE)
+```
+
+## Clean and sync tables
+
+Just make sure the tables are sync, same order for samples
+
+```{r clena_metadata}
+meta_clean = metadata[colnames(mat), ]
+meta_clean[,"size"] = design[row.names(meta_clean), "size"]
+meta_clean[meta_clean == 'N/A'] = NA
+meta_clean[is.na(meta_clean)] = 'unk'
+meta_clean[meta_clean == ''] = 'unk'
+```
+
+```{r clean}
+
+# keep = (tab_m %>% filter(mirna > 500000 & norm > 0.2) %>% dplyr::select(sample))[,1]
+
+meta_clean = meta_clean[keep,]
+mat = mat[,keep]
+
+keep_meta = meta_clean$Diffname_short != "unk"
+meta_clean = meta_clean[keep_meta,]
+mat = mat[,keep_meta]
+```
+
+
+## Correlation of metadata variables
+
+I looked for a way to get a correlation p-value and a rho value for categorical
+variables. I found that, that is quite similar, and could give us an idea.
+
+```{r cor}
+cols = c("Originating_Lab_ID","High_Confidence_Donor_ID","DatemiRNAextracted", "Donor_Life_Stage",
+         "Diffname_short","Gender","Tissue_of_Origin", "run", "lane", "index",
+         "Cell_Type_of_Origin","Cell_Line_Type","Reprogramming_Gene_Combination","size")
+cols_format = sub("[::_::]","\n",cols) # reduce space of labels in heatpmap
+
+comp = expand.grid(cols,cols)
+c = apply(comp,1,corr_two_nominal_vars,meta_clean)
+res = cbind(comp,do.call(rbind,c))
+names(res)[3:4] = c("cor","pvalue")
+
+cor_mat = tidyr::spread(res[,c(1,2,3)],"Var1","cor")
+cor_mat = cor_mat[,2:ncol(cor_mat)]
+cor_mat = matrix(unlist(cor_mat),nrow=length(cols))
+row.names(cor_mat) = cols_format
+colnames(cor_mat) = cols_format
+
+pval_mat = tidyr::spread(res[,c(1,2,4)],"Var1","pvalue")
+pval_mat = pval_mat[,2:ncol(pval_mat)]
+pval_mat = matrix(unlist(pval_mat), nrow=length(cols))
+row.names(pval_mat) = cols_format
+colnames(pval_mat) = cols_format
+
+cor_mat[is.na(cor_mat)] = 0
+par(cex=0.7)
+corrplot(cor_mat, p.mat = pval_mat, method = 'number', insig = "blank",  
+         is.corr=TRUE, sig.level = 0.05,tl.cex = 0.9, cl.cex=0.9)
+```
+
+i would say that **Tissue_of_origin**, **run**, **size** and **Gender** are a linear convination of all
+the rest. Trying to reduce the number of covariates that correlates ones with another.
+
+## most-variable genes
+
+```{r limma, cache=TRUE}
+voom_exp = voom(mat[rowMeans(mat)>5,], design=NULL, plot=T)
+clean_names = paste0(summarydata[colnames(voom_exp$E),"group"],"-",1:ncol(voom_exp$E))
+tmp_mat = voom_exp$E
+colnames(tmp_mat) = clean_names
+# write.table(tmp_mat,"report/voom_counts.tsv", quote=F,sep="\t")
+```
+
+
+Just the heapmap with top-variable genes but using linear regression instead of 
+rowsVar() function.
+
+```{r most-var}
+select = most_variable(voom_exp$E)
+
+# The palette with grey:
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+difname_levels = unique(meta_clean$Diffname_short)
+de_cols = cbPalette[1:length(difname_levels)]
+names(de_cols) = difname_levels
+
+
+pheatmap(voom_exp[select,], annotation = meta_clean[,c("Diffname_short","size", "Donor_Life_Stage","Tissue_of_Origin","Gender")], annotation_colors = list("Diffname_short" = de_cols),show_rownames = F, show_colnames = F)
+
+mds(voom_exp$E[select,],condition = meta_clean$Diffname_short)
+```
+
+
+## DESeq2
+
+### PCA
+
+There are some values that correlates, with PCA should be easy to see if samples
+have some bias to the previous variables. If there is any, this should be taking
+into account during DE.
+
+I used DESeq2 because for miRNA, I always found to normalized better, since there is quite variation in the top expressed miRNA, and many times bias to library preparation.
+
+If we want to look for a general UP/DOWN regulation, this is not valid.
+
+I tried many different variables, to make sure there wasn't a bias.
+
+I expected some bias due to Donor.life.Stage, although blastocyst are mixed
+with adult and fetal samples. 
+
+It seems are separated by differentiation stage, but don't know if it makes sense.
+
+```{r plotpca,eval=F}
+dds = DESeqDataSetFromMatrix(mat[rowMeans(mat)>5,], colData = meta_clean, design =~1)
+rlogMat = rlog(dds, blind= TRUE)
+
+
+DESeq2::plotPCA(rlogMat, intgroup = "Donor_Life_Stage", ntop=200)
+DESeq2::plotPCA(rlogMat, intgroup = "Diffname_short", ntop=200)
+```
+
+## covariate analysis
+
+i will just remove miRNA that are not express in less than 10% of the samples.
+
+```{r define}
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('Diffname_short','run','lane','Cell_Type_of_Origin','Tissue_of_Origin',
+                     'Reprogramming_Gene_Combination','Donor_Life_Stage',
+                     'Originating_Lab','Gender','High_Confidence_Donor_ID', 'size')
+#ContCovariates = c('numberReads','mappedReads')
+
+
+PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(mat, MIN_SAMPLE_PERCENT_WITH_MIN_GENE_CPM=0.1)
+
+PROCESSED_COUNTS$plotHist
+
+COVARIATES = meta_clean[,FactorCovariates]
+
+```
+
+### correlation of expression PCs to covariates without design
+
+```{r exp-cov}
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+FactorCovariates = c('Diffname_short','run','Cell_Type_of_Origin','Tissue_of_Origin',
+                     'Donor_Life_Stage','Originating_Lab','Gender','size')
+
+# Initial normalisation usign voom (with NULL desing)
+VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
+
+# Find PC of gene expression and significant covariates that are highly correlated with PCs
+DM = getDesignMatrix(meta_clean[,c(FactorCovariates)],FactorCovariates)
+
+preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$E, DM$design, 'NULL design(voom-normalized)',isKeyPlot=TRUE)
+preAdjustedSigCovars$PC_res[[1]]$plotData + theme(axis.text.x=element_text(size=10))
+```
+
+### correlation of weight PCs to covariates without design
+
+```{r weight}
+preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE_EXPRESSION$weight, DM$design, 'NULL design(voom-normalized)',isKeyPlot=TRUE)
+preAdjustedSigCovars$PC_res[[1]]$plotData + theme(axis.text.x=element_text(size=10))
+
+```
+
+### correlation of weight PCs to covariates with design
+
+```{r with-design}
+# Re-normalise with COVARIATES desing matrix
+new_cov = c('Diffname_short','run','Tissue_of_Origin','Donor_Life_Stage','Gender','size','Originating_Lab')
+DM = getDesignMatrix(meta_clean[,new_cov],new_cov)
+VOOM.ADJUSTED.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=DM$design, plot=T)
+#duplicateCorrelation(VOOM.ADJUSTED.GENE_EXPRESSION,DM$design,block=meta_clean$Diffname_short)
+# Find PC of re-adjusted gene expression and significant covariates that are highly correlated with PCs
+postAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.ADJUSTED.GENE_EXPRESSION$weight, DM$design, 'all adjusted design(voom-normalized)',isKeyPlot=TRUE)
+postAdjustedSigCovars$PC_res[[1]]$plotData + theme(axis.text.x=element_text(size=10))
+```
+
+### correlation of residuals PCs to covariates with design
+
+There is no correlation with residual, what it means that there is not extra 
+variation in the model?
+
+```{r cor-res}
+# Find PC of residual gene expression and significant covariates that are highly correlated with PCs
+fit = lapply( 1:nrow(VOOM.ADJUSTED.GENE_EXPRESSION$E), function(x){
+    f = lm(VOOM.ADJUSTED.GENE_EXPRESSION$E[x,] ~ 0 + DM$design, weights = VOOM.ADJUSTED.GENE_EXPRESSION$weight[x,])
+    f$residuals
+})
+
+# result.lm = glm(t(VOOM.ADJUSTED.GENE_EXPRESSION$E) ~ 0 + DM$design, weights = t(VOOM.ADJUSTED.GENE_EXPRESSION$weight))
+
+resAdjustedSigCovars = runPCAandPlotCorrelations(do.call(rbind,fit), DM$design, 'residual',isKeyPlot=TRUE)
+
+resAdjustedSigCovars$PC_res[[2]]$plotData
+```
+
+
+## clustering of ECTO, MESO and SC
+
+```{r play-clustering}
+#voom_mat = voom( ), design=design, plot=T)
+qc_figures =  function(m, i, c){
+    d = data.frame(row.names = colnames(m), cov=c)
+    #dds = DESeqDataSetFromMatrix(mat_norm,colData = as.data.frame(design),design = ~ 1)
+    #dds = estimateSizeFactors(dds)
+    #size_factor = sizeFactors(dds)
+    voom_mat = voom(m, design = model.matrix(~ 0 + c), plot=T)
+    corrected = voom_mat$E / voom_mat$weight
+    
+    x = melt(voom_mat$E)
+    idx = match(x$X2, i$UID)
+    x$type = i[idx,"Diffname_short"]
+    
+    g1 = ggplot(x, aes(x=value,group=X2,colour=type)) + geom_line(aes(color=type), stat="density",  alpha=0.4) + xlab("expression")
+    g2 = ggplot(x, aes(x=X2,y=value,colour=type)) + geom_jitter(size=1,alpha=0.3)+theme_bw() + xlab("")
+    
+    g3 = mds(voom_mat$weight, condition = i$Diffname_short, d = "cor", xi = 1,yi = 2) +ggtitle("PCA of voom_weights")
+    # mds(voom_mat$weight, condition = meta_clean_3states$run, d = "cor", xi = 1,yi = 2)
+    E_empty = voom_mat$E
+    colnames(E_empty) = 1:ncol(E_empty)
+    g4 = mds(E_empty, condition = i$Diffname_short, d = "cor", xi = 1,yi = 2)+ggtitle("PCA of  log2(voom_counts)")
+  
+    print(gridExtra::arrangeGrob(g1,g2,g3,g4,g5))
+}
+
+meta_clean_3states = meta_clean %>% filter(Diffname_short %in% c("MESO-5", "MESO-30", "MESO-15"))
+table(meta_clean_3states$Diffname_short)
+
+mat_3state = mat[,meta_clean_3states$UID]
+
+new_factors = c("Tissue_of_Origin","run","Originating_Lab")
+covariates = do.call(paste0,meta_clean_3states[,new_factors])
+```
+
+### removing mirnas with less than 10 counts in less than 10 samples
+
+```{r play-10-10,results='asis'}
+mat_clean =  (mat_3state[rowSums(mat_3state>10)>10,])
+cat(paste("number of miRNA", nrow(mat_clean)))
+#mat_norm = t(apply(mat_clean, 1, winsorize, fraction=0.3)) 
+mat_norm = mat_clean
+colnames(mat_norm) = colnames(mat_3state)
+qc_figures(mat_norm, meta_clean_3states, covariates)
+```
+
+### removing mirnas with less than 10 counts in less than 60 samples
+
+```{r play-60-10,results='asis'}
+mat_clean =  (mat_3state[rowSums(mat_3state>10)>60,])
+cat(paste("number of miRNA", nrow(mat_clean)))
+#mat_norm = t(apply(mat_clean, 1, winsorize, fraction=0.3)) 
+mat_norm = mat_clean
+colnames(mat_norm) = colnames(mat_3state)
+qc_figures(mat_norm, design)
+```
+
+### only seeing SC data
+
+```{r sc}
+myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+sc <- scale_fill_gradientn(colours = myPalette(100), limits=c(1, 20))
+
+clean_table = function(what, mat, meta_clean, new_factors){
+    i = meta_clean %>% filter(Diffname_short %in% what)
+    m = mat[,i$UID]
+    c = do.call(paste0,i[,new_factors])
+
+    d = data.frame(row.names = colnames(m), cov=c)
+    dds = DESeqDataSetFromMatrix(m,colData = d,design = ~ 1)
+    dds = estimateSizeFactors(dds)
+    mat_norm = counts(dds, normalized=T)
+    cutoff = round(ncol(mat_norm)*0.9)
+    clean = as.data.frame((mat_norm[rowSums(mat_norm>5)>cutoff,]))
+    list(mat=clean, meta=i)
+}
+
+plot_density = function(clean, i){
+    
+    #voom_mat = voom(mat_norm, design = design, plot=T,lib.size=size_factor)
+    #corrected = voom_mat$E / voom_mat$weight
+    
+    x = melt(log2(clean+1) %>% mutate(mir=rownames(clean)))
+    idx = match(x$variable, i$UID)
+    x$type = i[idx,"Diffname_short"]
+    x$x_jitter = 1
+    print( ggplot(x %>% filter(value>0), aes(x=value,group=variable,colour=type)) + geom_line(aes(color=type), stat="density",  alpha=0.4) + xlab("expression")+facet_wrap(~variable) )
+    
+    idx = sort(rowMeans(clean),index.return =TRUE)
+    x$mir = factor(x$mir, levels=row.names(clean)[idx$ix])
+    print(ggplot(x) + 
+        geom_tile(aes(x=variable, y=mir, fill=value)) +
+        sc +
+        scale_x_discrete(labels="") +
+        scale_y_discrete(labels="") )
+}
+
+# mat_clean =  (mat_3state[rowSums(mat_3state>5)>32,])
+sc_clean = clean_table("SC",mat, meta_clean, new_factors)
+plot_density(sc_clean[[1]], sc_clean[[2]])
+```
+
+
+## clustering of MESO-5 and SC
+
+```{r play2-other-group}
+
+meso5_clean = clean_table("MESO-5",mat, meta_clean, new_factors)
+plot_density(meso5_clean[[1]], meso5_clean[[2]])
+ecto_clean = clean_table("ECTO",mat, meta_clean, new_factors)
+plot_density(ecto_clean[[1]], ecto_clean[[2]])
+
+mir_sub = unique(c(row.names(sc_clean$mat),
+                   row.names(ecto_clean$mat),
+                   row.names(meso5_clean$mat)))
+samples_sub = unique(c(colnames(sc_clean$mat),
+                       colnames(ecto_clean$mat),
+                       colnames(meso5_clean$mat)))
+
+mat_sub = mat[mir_sub, samples_sub]
+meta_sub = meta_clean[samples_sub,]
+covariates = do.call(paste0,meta_sub[,new_factors])
+qc_figures(mat_sub, meta_sub, covariates)
+
+voom_mat = voom(mat_sub, design = model.matrix(~ 0 + covariates + meta_sub$Diffname_short), plot=T)
+pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,"Diffname_short",drop=F], show_rownames = F)
+```
+
+
