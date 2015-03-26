@@ -20,7 +20,7 @@ render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_
 
 # metadata and covariates
 
-```{r meta}
+```{r meta, cache=TRUE}
 library(tidyr)
 library(dplyr)
 library(knitr)
@@ -49,17 +49,17 @@ metadata = metadata_obj@values %>% distinct(UID)
 row.names(metadata) = metadata$UID
 
 mat_obj =  synGet(id="syn3355993")
-mat = mat_obj@filePath
+mat = read.table(mat_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
 # mat = read.csv("~/repos/pcbc_c4_analysis/data/mirna.csv", check.names = FALSE)
 
 reads_obj =  synGet(id="syn3355994")
-reads = reads_obj@filePath
+reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
 # reads = read.table("~/repos/pcbc_c4_analysis/data/smallRNA_reads.tsv", check.names = FALSE, row.names=1, header=T)
 
 keep = ( (reads %>% mutate(samples=rownames(reads)) %>% filter(mirna > 500000 & norm > 0.2))[,"samples"] )
 metadata$size = reads[as.character(row.names(metadata)),"norm"]
 metadata$size_cat = reads[as.character(row.names(metadata)),"breaks"]
-metadata$size_cat = reads[as.character(row.names(metadata)),"breaks"]
+metadata$mirna = log2(reads[as.character(row.names(metadata)),"mirna"])
 # join meso-15 and meso-30
 stages =  gsub("-5","Early",gsub("-30","Late",gsub("-15","Late",metadata$Diffname_short)))
 metadata$Diffname_short = as.character(stages)
@@ -163,20 +163,20 @@ meta_sub = meta_clean[samples_sub,]
 ### heatmap with voom normalization
 
 ```{r voom-norm}
-voom_mat = voom(mat_sub, design = model.matrix(~ 0 + ., model.frame(~ 0 + . , meta_sub[,new_factors])), plot=T)
-pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna_b"),drop=F], show_rownames = F)
+voom_mat = voom(mat_sub, design = model.matrix(~ 0 + ., model.frame(~ . , meta_sub[,new_factors])), plot=T)
+pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
 
 ### heatmap with rlog-deseq normalization
 
-```{r deseq-norm}
+```{r deseq-norm, cache=TRUE}
 d = meta_sub[,new_factors]
 dds = DESeqDataSetFromMatrix(mat_sub,colData = d,design = ~ Diffname_short)
 rlog_mat = rlog(dds)
 rlog_Mat = assay(rlog_mat)
 rlog_Mat[rlog_Mat > 20]=20
 meta_sub$mirna_b = cut(meta_sub$mirna, breaks=c(0,6,6.6,9))
-pheatmap(rlog_Mat, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna_b"),drop=F], show_rownames = F)
+pheatmap(rlog_Mat, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
 
 ## Non negative matrix factorization
@@ -185,12 +185,12 @@ Using this package to find modules( sets of mirnas that explain the different gr
 
 http://cran.r-project.org/web/packages/NMF/vignettes/NMF-vignette.pdf
 
-```{r nmf}
+```{r nmf, cache=TRUE}
 library(NMF)
-res_nmf = nmf(log2(rlog_Mat^2+2), 3:7)
-consensusmap(res_nmf, annCol = meta_sub[,c("Diffname_short","Cell_Line_Type")])
-plot(res_nmf)
-res_nmf_4 = nmf(log2(rlog_Mat^2+2), 4)
+# res_nmf = nmf(log2(rlog_Mat^2+2), 3:7)
+# consensusmap(res_nmf, annCol = meta_sub[,c("Diffname_short","Cell_Line_Type")])
+# plot(res_nmf)
+res_nmf_4 = nmf(log2(rlog_Mat^2+2), 4, nrun=20)
 coefmap(res_nmf_4,annCol = meta_sub[,c("Diffname_short","Cell_Line_Type")])
 basismap(res_nmf_4, subsetRow=TRUE)
 consensusmap(res_nmf_4, annCol = meta_sub[,c("Diffname_short","Cell_Line_Type")])
@@ -201,7 +201,7 @@ s = extractFeatures(res_nmf_4)
 nmf_select = rownames(rlog_Mat[unique(unlist(s)),])
 # X <- syntheticNMF(100, 3, 20, noise = 2)
 
-pheatmap(rlog_Mat[nmf_select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna_b"),drop=F], show_rownames = F)
+pheatmap(rlog_Mat[nmf_select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
 
 It worked without the MESOLate samples, no quite well detecting modules with all groups.
@@ -209,6 +209,7 @@ It worked without the MESOLate samples, no quite well detecting modules with all
 number of differents miRNAs in modules `r length(unlist(s))`
 
 ## Differential expression
+
 
 ```{r limma}
 
@@ -218,22 +219,24 @@ meta_sub$Tissue_of_Origin = gsub(" ",".",meta_sub$Tissue_of_Origin)
 
 dge <- DGEList(counts=mat_sub)
 dge <- calcNormFactors(dge)
-dm = model.matrix(~ 0 + ., model.frame(~ 0 + . , meta_sub[,new_factors]))
+
+dm = model.matrix(~ 0 + ., model.frame(~  . , meta_sub[,new_factors]))
 v <- voom(dge,dm, plot=TRUE)
 fit <- lmFit(v,dm)
-my.contrast = makeContrasts( ECTO.DE=Diffname_short.ECTO - Diffname_short.DE, 
-                             ECTO.SC=Diffname_short.ECTO-Diffname_short.SC,
-                             ECTO.EB=Diffname_short.ECTO-Diffname_short.EB,
-                             ECTO.MESOEarly=Diffname_short.ECTO-Diffname_short.MESOEarly,
-                             SC.DE=Diffname_short.SC - Diffname_short.DE, 
-                             SC.EB=Diffname_short.SC-Diffname_short.EB,
-                             SC.MESOEarly=Diffname_short.SC-Diffname_short.MESOEarly,
-                             EB.DE=Diffname_short.EB - Diffname_short.DE, 
-                             EB.MESOEarly=Diffname_short.EB-Diffname_short.MESOEarly,
-                             MESOEarly.DE = Diffname_short.MESOEarly - Diffname_short.DE,
-                             MESOEarly.MESOLate = Diffname_short.MESOEarly - Diffname_short.MESOLate,
-                             MESOLate.DE = Diffname_short.MESOLate - Diffname_short.DE,
-                             levels=dm$design)
+my.contrast = makeContrasts( ECTO.DE=Diffname_shortECTO - Diffname_shortDE, 
+                             ECTO.SC=Diffname_shortECTO-Diffname_shortSC,
+                             ECTO.EB=Diffname_shortECTO-Diffname_shortEB,
+                             ECTO.MESOEarly=Diffname_shortECTO-Diffname_shortMESOEarly,
+                             SC.DE=Diffname_shortSC - Diffname_shortDE, 
+                             SC.EB=Diffname_shortSC-Diffname_shortEB,
+                             SC.MESOEarly=Diffname_shortSC-Diffname_shortMESOEarly,
+                             EB.DE=Diffname_shortEB - Diffname_shortDE, 
+                             EB.MESOEarly=Diffname_shortEB-Diffname_shortMESOEarly,
+                             EB.MESOLate=Diffname_shortEB-Diffname_shortMESOLate,
+                             MESOEarly.DE = Diffname_shortMESOEarly - Diffname_shortDE,
+                             MESOEarly.MESOLate = Diffname_shortMESOEarly - Diffname_shortMESOLate,
+                             MESOLate.DE = Diffname_shortMESOLate - Diffname_shortDE,
+                             levels=dm)
 fit = contrasts.fit(fit, my.contrast)
 fit <- eBayes(fit)
 
@@ -242,27 +245,50 @@ for (c in colnames(my.contrast)){
     top[[c]] = topTable(fit, coef=c,number=Inf) %>% mutate(mirs=rownames(fit$coefficients)) %>% filter(adj.P.Val<0.01, abs(logFC)>2)   %>% mutate(comparison=c)  
 }
 
-data.frame(sapply(top, nrow))
-
 res = do.call(rbind, top)
 # write.table(res, "~/repos/pcbc_c4_analysis/data/DE_mirnas.tsv", row.names=F, quote=F, sep="\t") 
 ```
 
+Number of miRNAs de-regulated (abs(FC)>2 & adj.P.Val<0.01):
+
+```{r show-de, results='asis'}
+kable(data.frame(sapply(top, nrow)))
+
+```
 
 unique miRNAs `r length(unique(unlist(sapply(top, function(x){x$mirs}))))`
 
 ```{r limma-heatmap}
 select = as.character(unique(unlist(sapply(top, function(x){x$mirs}))))
 
-pheatmap(rlog_Mat[select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna_b"),drop=F], show_rownames = F)
+pheatmap(rlog_Mat[select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
+```
+
+testing densort function
+
+```{r dendsort}
+library(dendsort)
+par(mar=c(1,1,1,1), cex=0.5)
+sideColors = rainbow(6)
+names(sideColors) = unique(meta_sub$Diffname_short)
+hc = dendsort(hclust(as.dist(1-cor(rlog_Mat[select,])^2), method="ward.D"))
+hr = dendsort(hclust(as.dist(1-cor(t(rlog_Mat[select,]))^2), method="ward.D"))
+myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+
+heatmap.2(rlog_Mat[select, ], dendrogram ="both",
+          col=myPalette(50),
+          Rowv=(as.dendrogram(hr)), Colv=(as.dendrogram(hc)),
+          scale="none", labRow="", labCol="", ColSideColors = sideColors[meta_sub$Diffname_short], 
+          key = F, trace="none", density.info="none")
+legend("topleft", legend=names(sideColors), fill=sideColors, cex = 0.5)
+
+#plot(1:6,pch=20, col=sideColors)
 ```
 
 
-Common miRNAs between voom-limma and NMF are noisy signal
-
-```{r common}
+```{r common, echo=FALSE, eval=FALSE}
 common = intersect(nmf_select, select)
-pheatmap(rlog_Mat[common,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna_b"),drop=F], show_rownames = F)
+pheatmap(rlog_Mat[common,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
 
 
