@@ -14,7 +14,7 @@ library(rmarkdown)
 library(knitrBootstrap)
 knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
                cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
-               message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE)
+               message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE, echo=FALSE)
 render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
 
@@ -61,7 +61,7 @@ metadata$size = reads[as.character(row.names(metadata)),"norm"]
 metadata$size_cat = reads[as.character(row.names(metadata)),"breaks"]
 metadata$mirna = log2(reads[as.character(row.names(metadata)),"mirna"])
 # join meso-15 and meso-30
-stages =  gsub("-5","Early",gsub("-30","Late",gsub("-15","Late",metadata$Diffname_short)))
+stages =  gsub("-5","_Early",gsub("-30","_Late",gsub("-15","_Late",metadata$Diffname_short)))
 metadata$Diffname_short = as.character(stages)
 ```
 
@@ -134,8 +134,8 @@ plot_density = function(clean, i){
 }
 
 sc_clean = clean_table("SC",mat, meta_clean, new_factors)
-mesoearly_clean = clean_table("MESOEarly",mat, meta_clean, new_factors)
-mesolate_clean = clean_table("MESOLate",mat, meta_clean, new_factors)
+mesoearly_clean = clean_table("MESO_Early",mat, meta_clean, new_factors)
+mesolate_clean = clean_table("MESO_Late",mat, meta_clean, new_factors)
 ecto_clean = clean_table("ECTO",mat, meta_clean, new_factors)
 eb_clean = clean_table("EB",mat, meta_clean, new_factors)
 de_clean = clean_table("DE",mat, meta_clean, new_factors)
@@ -223,45 +223,56 @@ dge <- calcNormFactors(dge)
 dm = model.matrix(~ 0 + ., model.frame(~  . , meta_sub[,new_factors]))
 v <- voom(dge,dm, plot=TRUE)
 fit <- lmFit(v,dm)
-my.contrast = makeContrasts( ECTO.DE=Diffname_shortECTO - Diffname_shortDE, 
-                             ECTO.SC=Diffname_shortECTO-Diffname_shortSC,
-                             ECTO.EB=Diffname_shortECTO-Diffname_shortEB,
-                             ECTO.MESOEarly=Diffname_shortECTO-Diffname_shortMESOEarly,
-                             SC.DE=Diffname_shortSC - Diffname_shortDE, 
-                             SC.EB=Diffname_shortSC-Diffname_shortEB,
-                             SC.MESOEarly=Diffname_shortSC-Diffname_shortMESOEarly,
-                             EB.DE=Diffname_shortEB - Diffname_shortDE, 
-                             EB.MESOEarly=Diffname_shortEB-Diffname_shortMESOEarly,
-                             EB.MESOLate=Diffname_shortEB-Diffname_shortMESOLate,
-                             MESOEarly.DE = Diffname_shortMESOEarly - Diffname_shortDE,
-                             MESOEarly.MESOLate = Diffname_shortMESOEarly - Diffname_shortMESOLate,
-                             MESOLate.DE = Diffname_shortMESOLate - Diffname_shortDE,
-                             levels=dm)
-fit = contrasts.fit(fit, my.contrast)
-fit <- eBayes(fit)
 
-top = list()
-for (c in colnames(my.contrast)){
-    top[[c]] = topTable(fit, coef=c,number=Inf) %>% mutate(mirs=rownames(fit$coefficients)) %>% filter(adj.P.Val<0.01, abs(logFC)>2)   %>% mutate(comparison=c)  
+contrasts_list <- combn(paste0("Diffname_short",unique(meta_sub$Diffname_short)),2)
+contrasts_list <- apply(contrasts_list,2,paste,collapse='-')
+
+contrast_matrix <- makeContrasts(contrasts=contrasts_list,levels=colnames(fit$coefficients))
+
+# Refit contrasts
+fit.cont <- contrasts.fit(fit,contrast_matrix)
+
+# Estimate moderated t-statistics
+fit.cont  <- eBayes(fit.cont )
+
+# Obtain all the differential expession combinations
+diff.exp <- list()
+diff.exp$logFC <- data.frame(row.names = rownames(v$E))
+diff.exp$adj.P.Val <- data.frame(row.names = rownames(v$E))
+
+for (i in contrasts_list){
+  tmp <- topTable(fit.cont, coef=i, number=Inf)
+  colNames <- gsub('Diffname_short','',i)
+  diff.exp$logFC[,colNames] <- tmp[rownames(diff.exp$logFC),'logFC']
+  diff.exp$adj.P.Val[,colNames] <- tmp[rownames(diff.exp$adj.P.Val),'adj.P.Val']
 }
+tmp <- cbind(diff.exp$logFC, diff.exp$adj.P.Val)
+# write.table(diff.exp,file='./DifferentialExpression_DiffnameShort.txt',sep='\t',row.names=T,col.names=T,quote=F)
 
-res = do.call(rbind, top)
-# write.table(res, "~/repos/pcbc_c4_analysis/data/DE_mirnas.tsv", row.names=F, quote=F, sep="\t") 
+# Get number of significantly differentialy expressed genes with adj.P.Val <= 0.01 and abs(logFC) >= 2
+sig.exp <- diff.exp$adj.P.Val<=0.01 & abs(diff.exp$logFC) >= 2
+# colnames(v) <- gsub('-adj.P.Val','',colnames(sig.exp))
+sig.gset <- list()
+for (i in colnames(sig.exp))
+   sig.gset[[i]] <- rownames(sig.exp)[sig.exp[,i]]
+
+# res = do.call(rbind, top)
+write.table(res, "~/repos/pcbc_c4_analysis/data/miRNA_DifferentialExpression_DiffnameShort.txt", row.names=F, quote=F, sep="\t") 
 ```
 
 Number of miRNAs de-regulated (abs(FC)>2 & adj.P.Val<0.01):
 
 ```{r show-de, results='asis'}
-kable(data.frame(sapply(top, nrow)))
-
+# kable(data.frame(sapply(top, nrow)))
+print(apply(sig.exp,2,sum))
 ```
 
-unique miRNAs `r length(unique(unlist(sapply(top, function(x){x$mirs}))))`
+unique miRNAs `r length(as.character(unique(unlist(sig.gset))))`
 
 ```{r limma-heatmap}
-select = as.character(unique(unlist(sapply(top, function(x){x$mirs}))))
+select = as.character(unique(unlist(sig.gset)))
 
-pheatmap(rlog_Mat[select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
+pheatmap(rlog_Mat[select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F, show_colnames = F)
 ```
 
 testing densort function
@@ -273,14 +284,18 @@ sideColors = rainbow(6)
 names(sideColors) = unique(meta_sub$Diffname_short)
 hc = dendsort(hclust(as.dist(1-cor(rlog_Mat[select,])^2), method="ward.D"))
 hr = dendsort(hclust(as.dist(1-cor(t(rlog_Mat[select,]))^2), method="ward.D"))
-myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+
+myPalette <-  colorRampPalette(c("red", "white", "green"))(n = 98)
+colors = c(seq(-2,5,length=33),seq(5,12,length=33),seq(12,21,length=33))
+
 
 heatmap.2(rlog_Mat[select, ], dendrogram ="both",
-          col=myPalette(50),
+          col=myPalette,breaks=colors,
           Rowv=(as.dendrogram(hr)), Colv=(as.dendrogram(hc)),
-          scale="none", labRow="", labCol="", ColSideColors = sideColors[meta_sub$Diffname_short], 
+          scale="none", labRow="", labCol="", ColSideColors = sideColors[meta_sub$Diffname_short],
           key = F, trace="none", density.info="none")
-legend("topleft", legend=names(sideColors), fill=sideColors, cex = 0.5)
+
+legend("topleft", legend=names(sideColors), fill=sideColors, cex = 0.5, horiz = T)
 
 #plot(1:6,pch=20, col=sideColors)
 ```
@@ -288,7 +303,23 @@ legend("topleft", legend=names(sideColors), fill=sideColors, cex = 0.5)
 
 ```{r common, echo=FALSE, eval=FALSE}
 common = intersect(nmf_select, select)
-pheatmap(rlog_Mat[common,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
+pheatmap.2(rlog_Mat[common,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
 
+```{r store,eval=F}
+SYNAPSE_STORE = FALSE
+parentId = "syn3464726"
+if (SYNAPSE_STORE){
+  COVARIATES_CODE <- File('DE_MatrixmiRNA_seqbuster.Rmd',name = 'miRNA Differential Expression Code',parentId = parentId)
+  COVARIATES_CODE <- synStore(COVARIATES_CODE, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA Differential Expression Code', executed='https://github.com/lpantano/pcbc_c4_analysis/blob/master/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd')
+  DE <- File('"~/repos/pcbc_c4_analysis/data/DifferentialExpression_DiffnameShort.txt',name = 'Differential Expression DiffnameShort',parentId = parentId)
+  DE <- synStore(DE, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA Differential Analysis', executed=COVARIATES_CODE)
+
+devtools::source_gist("6117476")
+#knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd",
+#             owner="syn3356340",
+#             overwrite=TRUE)
+
+}
+```
 
