@@ -61,7 +61,7 @@ metadata$size = reads[as.character(row.names(metadata)),"norm"]
 metadata$size_cat = reads[as.character(row.names(metadata)),"breaks"]
 metadata$mirna = log2(reads[as.character(row.names(metadata)),"mirna"])
 # join meso-15 and meso-30
-stages =  gsub("-5","_Early",gsub("-30","_Late",gsub("-15","_Late",metadata$Diffname_short)))
+stages =  gsub("-5","_EARLY",gsub("-30","_LATE",gsub("-15","_LATE",metadata$Diffname_short)))
 metadata$Diffname_short = as.character(stages)
 ```
 
@@ -134,8 +134,8 @@ plot_density = function(clean, i){
 }
 
 sc_clean = clean_table("SC",mat, meta_clean, new_factors)
-mesoearly_clean = clean_table("MESO_Early",mat, meta_clean, new_factors)
-mesolate_clean = clean_table("MESO_Late",mat, meta_clean, new_factors)
+mesoearly_clean = clean_table("MESO_EARLY",mat, meta_clean, new_factors)
+mesolate_clean = clean_table("MESO_LATE",mat, meta_clean, new_factors)
 ecto_clean = clean_table("ECTO",mat, meta_clean, new_factors)
 eb_clean = clean_table("EB",mat, meta_clean, new_factors)
 de_clean = clean_table("DE",mat, meta_clean, new_factors)
@@ -175,6 +175,8 @@ dds = DESeqDataSetFromMatrix(mat_sub,colData = d,design = ~ Diffname_short)
 rlog_mat = rlog(dds)
 rlog_Mat = assay(rlog_mat)
 rlog_Mat[rlog_Mat > 20]=20
+write.table(rlog_Mat, "~/repos/pcbc_c4_analysis/data/miRNA_rlog_Mat.tsv", quote=F, sep="\t") 
+
 meta_sub$mirna_b = cut(meta_sub$mirna, breaks=c(0,6,6.6,9))
 pheatmap(rlog_Mat, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
@@ -224,7 +226,7 @@ dm = model.matrix(~ 0 + ., model.frame(~  . , meta_sub[,new_factors]))
 v <- voom(dge,dm, plot=TRUE)
 fit <- lmFit(v,dm)
 
-contrasts_list <- combn(paste0("Diffname_short",unique(meta_sub$Diffname_short)),2)
+contrasts_list <- combn(paste0("Diffname_short",c("DE", "EB", "ECTO", "MESO_EARLY", "MESO_LATE", "SC")),2)
 contrasts_list <- apply(contrasts_list,2,paste,collapse='-')
 
 contrast_matrix <- makeContrasts(contrasts=contrasts_list,levels=colnames(fit$coefficients))
@@ -257,7 +259,7 @@ for (i in colnames(sig.exp))
    sig.gset[[i]] <- rownames(sig.exp)[sig.exp[,i]]
 
 # res = do.call(rbind, top)
-write.table(res, "~/repos/pcbc_c4_analysis/data/miRNA_DifferentialExpression_DiffnameShort.txt", row.names=F, quote=F, sep="\t") 
+write.table(diff.exp, "~/repos/pcbc_c4_analysis/data/miRNA_DifferentialExpression_DiffnameShort.txt", quote=F, sep="\t") 
 ```
 
 Number of miRNAs de-regulated (abs(FC)>2 & adj.P.Val<0.01):
@@ -277,7 +279,7 @@ pheatmap(rlog_Mat[select,], clustering_distance_rows = "correlation", clustering
 
 testing densort function
 
-```{r dendsort}
+```{r dendsort, eval=FALSE}
 library(dendsort)
 par(mar=c(1,1,1,1), cex=0.5)
 sideColors = rainbow(6)
@@ -287,7 +289,6 @@ hr = dendsort(hclust(as.dist(1-cor(t(rlog_Mat[select,]))^2), method="ward.D"))
 
 myPalette <-  colorRampPalette(c("red", "white", "green"))(n = 98)
 colors = c(seq(-2,5,length=33),seq(5,12,length=33),seq(12,21,length=33))
-
 
 heatmap.2(rlog_Mat[select, ], dendrogram ="both",
           col=myPalette,breaks=colors,
@@ -312,13 +313,17 @@ parentId = "syn3464726"
 if (SYNAPSE_STORE){
   COVARIATES_CODE <- File('DE_MatrixmiRNA_seqbuster.Rmd',name = 'miRNA Differential Expression Code',parentId = parentId)
   COVARIATES_CODE <- synStore(COVARIATES_CODE, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA Differential Expression Code', executed='https://github.com/lpantano/pcbc_c4_analysis/blob/master/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd')
-  DE <- File('"~/repos/pcbc_c4_analysis/data/DifferentialExpression_DiffnameShort.txt',name = 'Differential Expression DiffnameShort',parentId = parentId)
+  
+  DE <- File('~/repos/pcbc_c4_analysis/data/miRNA_DifferentialExpression_DiffnameShort.txt',name = 'Differential Expression DiffnameShort',parentId = parentId)
   DE <- synStore(DE, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA Differential Analysis', executed=COVARIATES_CODE)
 
+  rlog <- File("~/repos/pcbc_c4_analysis/data/miRNA_rlog_Mat.tsv", name= "miRNA rlog expression", parentId = parentId)
+  rlog <- synStore(rlog, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA rlog expression', executed=COVARIATES_CODE)
+  
 devtools::source_gist("6117476")
-#knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd",
-#             owner="syn3356340",
-#             overwrite=TRUE)
+knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd",
+             owner=COVARIATES_CODE@properties$id,
+             overwrite=TRUE)
 
 }
 ```
