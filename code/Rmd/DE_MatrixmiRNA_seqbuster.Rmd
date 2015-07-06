@@ -23,6 +23,7 @@ render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_
 ```{r meta, cache=TRUE}
 library(tidyr)
 library(dplyr)
+library(plyr)
 library(knitr)
 library(synapseClient)
 library(DESeq2)
@@ -38,7 +39,10 @@ library(psych)
 library(pheatmap)
 
 source("~/repos/pcbc_c4_analysis/code/R/lib/qc.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/getDesignMatrix.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/linColumnFinder.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/rownameToFirstColumn.R")
 
 synapseLogin()
 
@@ -86,7 +90,7 @@ mat = mat[,keep_meta]
 
 meta_clean$mirna= log10(colSums(mat))
 
-new_factors = c("Diffname_short", "Tissue_of_Origin","run","Originating_Lab_ID")
+new_factors = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
 ```
 
 # Filtering by group
@@ -156,6 +160,7 @@ samples_sub = unique(c(colnames(sc_clean$mat),
 
 mat_sub = mat[mir_sub, samples_sub]
 meta_sub = meta_clean[samples_sub,]
+donor_ID = meta_clean[samples_sub, "Donor_ID"]
 # covariates = do.call(paste0,meta_sub[,new_factors])
 # qc_figures(mat_sub, meta_sub, covariates)
 ```
@@ -215,59 +220,163 @@ number of differents miRNAs in modules `r length(unlist(s))`
 
 ```{r limma}
 
-meta_sub$Originating_Lab_ID = as.numeric(as.factor(meta_sub$Originating_Lab_ID))
+#meta_sub$Originating_Lab_ID = as.numeric(as.factor(meta_sub$Originating_Lab_ID))
 meta_sub$run = as.numeric(as.factor(meta_sub$run))
-meta_sub$Tissue_of_Origin = gsub(" ",".",meta_sub$Tissue_of_Origin)
+meta_sub$Culture_Conditions = as.numeric(as.factor(meta_sub$Culture_Conditions))
+meta_sub$lane = as.numeric(as.factor(meta_sub$lane))
+meta_sub$Cell_Type_of_Origin_Level2  = gsub(" ",".",meta_sub$Cell_Type_of_Origin_Level2)
+
+for (nc in colnames(meta_sub))
+  meta_sub[,nc] = as.factor(meta_sub[,nc])
+
+# Post adjusted design matrix
 
 dge <- DGEList(counts=mat_sub)
 dge <- calcNormFactors(dge)
 
-dm = model.matrix(~ 0 + ., model.frame(~  . , meta_sub[,new_factors]))
-v <- voom(dge,dm, plot=TRUE)
-fit <- lmFit(v,dm)
+# dm = model.matrix(~ 0 + ., model.frame(~  . , meta_sub[,new_factors]))
 
-contrasts_list <- combn(paste0("Diffname_short",c("DE", "EB", "ECTO", "MESO_EARLY", "MESO_LATE", "SC")),2)
-contrasts_list <- apply(contrasts_list,2,paste,collapse='-')
+#contrasts_list <- combn(paste0("Diffname_short",c("DE", "EB", "ECTO", "MESO_EARLY", "MESO_LATE", "SC")),2)
+#contrasts_list <- apply(contrasts_list,2,paste,collapse='-')
+#contrast_matrix <- makeContrasts(contrasts=contrasts_list,levels=colnames(fit$coefficients))
 
-contrast_matrix <- makeContrasts(contrasts=contrasts_list,levels=colnames(fit$coefficients))
 
-# Refit contrasts
-fit.cont <- contrasts.fit(fit,contrast_matrix)
+make_diffexp <- function(dge, mat_factors, target, block_factor){
+  DESIGN = getDesignMatrix(mat_factors, Intercept = F)
+  dm = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
 
-# Estimate moderated t-statistics
-fit.cont  <- eBayes(fit.cont )
+  v <- voom(dge,dm, plot=TRUE)
+  
+  correlation <- duplicateCorrelation(v$E, design = dm, weights = v$W, block=block_factor)
+  
+  fit <- lmFit(v$E, design = dm, weights = v$W, block=block_factor, correlation = correlation$cor)
+  # Make contrast to check differential expression
+  CONT.NAMES <- colnames(dm)[grep(target,colnames(dm))]
+  CONT.NAMES <- combn(CONT.NAMES,2)
+  CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+  
+  CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(fit$coefficients))
+  colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub(target,'',x);
+  x <- gsub('-','_vs_',x);
+  x <- paste('All',x,sep='__')})
+  
+  
+  # Refit contrasts
+  fit.cont <- contrasts.fit(fit, CONT)
+  
+  # Estimate moderated t-statistics
+  fit.cont  <- eBayes(fit.cont )
+  
+  # Obtain all the differential expession combinations
+  diff.exp <- list()
+  diff.exp$logFC <- data.frame(row.names = rownames(v$E))
+  diff.exp$adj.P.Val <- data.frame(row.names = rownames(v$E))
+  for (contrast in colnames(CONT)){
+    tmp <- topTable(fit.cont, coef=contrast, number=Inf)
+    sig <- tmp$adj.P.Val<=0.01 & abs(tmp$logFC) >= 0
+    diff.exp$logFC[,contrast] <- tmp[rownames(diff.exp$logFC),'logFC']
+    diff.exp$adj.P.Val[,contrast] <- tmp[rownames(diff.exp$adj.P.Val),'adj.P.Val']
+    diff.exp$sig.test[rownames(tmp)[sig], contrast] <- tmp[rownames(tmp)[sig],'logFC']
 
-# Obtain all the differential expession combinations
-diff.exp <- list()
-diff.exp$logFC <- data.frame(row.names = rownames(v$E))
-diff.exp$adj.P.Val <- data.frame(row.names = rownames(v$E))
-
-for (i in contrasts_list){
-  tmp <- topTable(fit.cont, coef=i, number=Inf)
-  colNames <- gsub('Diffname_short','',i)
-  diff.exp$logFC[,colNames] <- tmp[rownames(diff.exp$logFC),'logFC']
-  diff.exp$adj.P.Val[,colNames] <- tmp[rownames(diff.exp$adj.P.Val),'adj.P.Val']
+  }
+  
+  diff.exp
 }
-tmp <- cbind(diff.exp$logFC, diff.exp$adj.P.Val)
+
+```
+
+```{r diffname}
+these_factors = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
+
+diffname <- make_diffexp(dge, meta_sub[,these_factors], "Diffname_short", donor_ID)
+
+tmp <- cbind(diffname$logFC, diffname$adj.P.Val)
 # write.table(diff.exp,file='./DifferentialExpression_DiffnameShort.txt',sep='\t',row.names=T,col.names=T,quote=F)
 
 # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.01 and abs(logFC) >= 2
-sig.exp <- diff.exp$adj.P.Val<=0.01 & abs(diff.exp$logFC) >= 2
+sig.exp <- diffname$adj.P.Val<=0.01 & abs(diffname$logFC) >= 0
 # colnames(v) <- gsub('-adj.P.Val','',colnames(sig.exp))
-sig.gset <- list()
-for (i in colnames(sig.exp))
-   sig.gset[[i]] <- rownames(sig.exp)[sig.exp[,i]]
+# sig.gset <- list()
+# for (i in colnames(sig.exp))
+#   sig.gset[[i]] <- rownames(sig.exp)[sig.exp[,i]]
 
 # res = do.call(rbind, top)
-write.table(diff.exp, "~/repos/pcbc_c4_analysis/data/miRNA_DifferentialExpression_DiffnameShort.txt", quote=F, sep="\t") 
-```
-
-Number of miRNAs de-regulated (abs(FC)>2 & adj.P.Val<0.01):
-
-```{r show-de, results='asis'}
-# kable(data.frame(sapply(top, nrow)))
+# write.table(diff.exp, "~/repos/pcbc_c4_analysis/data/miRNA_DifferentialExpression_DiffnameShort.txt", quote=F, sep="\t") 
 print(apply(sig.exp,2,sum))
 ```
+
+```{r gender}
+these_factors = c("Gender", "Diffname_short","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
+
+gender <- make_diffexp(dge, meta_sub[,these_factors], "Gender", donor_ID)
+
+tmp <- cbind(gender$logFC, gender$adj.P.Val)
+sig.exp <- gender$adj.P.Val<=0.01 & abs(gender$logFC) >= 0
+print(apply(sig.exp,2,sum))
+```
+
+```{r celltype}
+these_factors = c("Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","Donor_Life_Stage","lane","Culture_Conditions","run")
+
+celltype <- make_diffexp(dge, meta_sub[,these_factors], "Cell_Type_of_Origin_Level2", donor_ID)
+
+tmp <- cbind(celltype$logFC, celltype$adj.P.Val)
+sig.exp <- celltype$adj.P.Val<=0.01 & abs(celltype$logFC) >= 0
+print(apply(sig.exp,2,sum))
+```
+
+```{r culturecondition}
+these_factors = c("Culture_Conditions","Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","Donor_Life_Stage","lane","run")
+
+culturecondition <- make_diffexp(dge, meta_sub[,these_factors], "Culture_Conditions", donor_ID)
+
+tmp <- cbind(culturecondition$logFC, culturecondition$adj.P.Val)
+sig.exp <- culturecondition$adj.P.Val<=0.01 & abs(culturecondition$logFC) >= 0
+print(apply(sig.exp,2,sum))
+```
+
+```{r donorlifestage}
+these_factors = c("Donor_Life_Stage", "Culture_Conditions","Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","lane","run")
+
+donorlifestage <- make_diffexp(dge, meta_sub[,these_factors], "Donor_Life_Stage", donor_ID)
+
+tmp <- cbind(donorlifestage$logFC, donorlifestage$adj.P.Val)
+sig.exp <- donorlifestage$adj.P.Val<=0.01 & abs(donorlifestage$logFC) >= 0
+print(apply(sig.exp,2,sum))
+```
+
+```{r print.imp.genes}
+FC <- join_all(list(rownameToFirstColumn(diffname$logFC,'GeneNames'),
+                    rownameToFirstColumn(gender$logFC,'GeneNames'),
+                    rownameToFirstColumn(celltype$logFC,'GeneNames'),
+                    rownameToFirstColumn(culturecondition$logFC,'GeneNames'),
+                    rownameToFirstColumn(donorlifestage$logFC,'GeneNames')),
+               by = 'GeneNames',
+               match = 'all')
+
+PVAL <- join_all(list(rownameToFirstColumn(diffname$adj.P.Val,'GeneNames'),
+                      rownameToFirstColumn(gender$adj.P.Val,'GeneNames'),
+                      rownameToFirstColumn(celltype$adj.P.Val,'GeneNames'),
+                      rownameToFirstColumn(culturecondition$adj.P.Val,'GeneNames'),
+                      rownameToFirstColumn(donorlifestage$adj.P.Val,'GeneNames')),
+                 by = 'GeneNames',
+                 match = 'all')
+```
+
+
+```{r store}
+# Store logFC
+write.table(FC,file='../../data/DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',sep='\t',row.names=F,quote=F)
+FC_OBJ <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',name = 'logFC',parentId = CODE$properties$id)
+FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+    
+# Store adjusted pvalue
+write.table(PVAL,file='../../data/DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',sep='\t',row.names=F,quote=F)
+PVAL_OBJ <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',name = 'Adjusted Pvalue',parentId = CODE$properties$id)
+PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+
+```
+
 
 unique miRNAs `r length(as.character(unique(unlist(sig.gset))))`
 
@@ -277,7 +386,6 @@ select = as.character(unique(unlist(sig.gset)))
 pheatmap(rlog_Mat[select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F, show_colnames = F)
 ```
 
-testing densort function
 
 ```{r dendsort, eval=FALSE}
 library(dendsort)
