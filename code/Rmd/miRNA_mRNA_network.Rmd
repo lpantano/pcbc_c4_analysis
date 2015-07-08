@@ -41,44 +41,71 @@ library(psych)
 library(pheatmap)
 
 source("~/repos/pcbc_c4_analysis/code/R/lib/qc.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
+# source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
 
 synapseLogin()
 
-mirna_obj =  synGet(id="syn3464978")
-mirna = read.table(mirna_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
+mirna_pval_obj =  synGet(id="syn4596141")
+mirna_pval = read.table(mirna_pval_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
+mirna_logfc_obj =  synGet(id="syn4595547")
+mirna_logfc = read.table(mirna_logfc_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
 
-mrna_obj =  synGet(id="syn3382514")
-mrna = read.table(mrna_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
+mrna_logfc_obj =  synGet(id="syn4484226")
+mrna_logfc = read.table(mrna_logfc_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
+mrna_pval_obj =  synGet(id="syn4484228")
+mrna_pval = read.table(mrna_pval_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
 
 
 metadata_id = "syn3219876"
 metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
 metadata = metadata_obj@values %>% distinct(UID)
 row.names(metadata) = metadata$UID
-stages =  gsub("-5","_EARLY",gsub("-30","_LATE",gsub("-15","_LATE",metadata$Diffname_short)))
+stages =  gsub("-5","5",gsub("-30","LATE",gsub("-15","LATE",metadata$Diffname_short)))
 metadata$Diffname_short = as.character(stages)
 
-mirna_rlog_obj =  synGet(id="syn3484717")
+mirna_rlog_obj =  synGet(id="syn4595556")
 rlog_Mat = read.table(mirna_rlog_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
 
 
-format_table = function(x){
-    fc = x[,grep("log",colnames(x))]
-    pv = x[,grep("adj",colnames(x))]
-    # sig = pv < 0.01 & abs(fc) > 2
-    # fc_sig = matrix(fc[sig], ncol=ncol(fc))
-    colnames(fc) = gsub("logFC.", "", colnames(fc))
-    fc$genes = gsub("[::.::][0-9]*$", "", rownames(fc))
-    pv_long = melt(pv)
-    fc_long = melt(fc, id.vars = "genes")
-    fc_sign = fc_long[abs(fc_long$value)>2 & pv_long$value<0.01, ]
-    fc_sign
+.grep <- function(df, comp){
+  idx = rowSums( sapply(paste0('_',comp,'_'), function(x)grepl(x, names(df))) ) > 0
+  df[,idx]
+}
+
+.convert_to_ensembl <- function(m){
+  require(biomaRt)
+  ensembl = useMart('ensembl', dataset = "hsapiens_gene_ensembl")
+  df = getBM(attributes=c("ensembl_gene_id", "external_gene_name"), filters="external_gene_name", values=as.character(rownames(m)), mart=ensembl)
+  df = df %>% filter(ensembl_gene_id != "")
+  new_m = m[as.character(df$external_gene_name),]
+  row.names(new_m) = as.character(df$ensembl_gene_id)
+  return(new_m)
 }
 
 
-mirna_tab = format_table(mirna)
-mrna_tab = format_table(mrna)
+format_table = function(m_logfc, m_pval, map=FALSE){
+    if (map){
+      m_logfc = .convert_to_ensembl(m_logfc)
+      m_pval = .convert_to_ensembl(m_pval)
+    }
+    m_logfc = .grep(m_logfc, comp)
+    m_pval = .grep(m_pval, comp)
+    
+    m_sig = lapply(names(m_pval), function(x){
+      sig = m_pval[,x] < 0.01 & abs(m_logfc[,x]) > 2
+      dt = data.frame(fc=m_logfc[sig, x],gene=rownames(m_logfc)[sig])
+      
+      dt$cont = x
+      dt
+    })
+    do.call(rbind, m_sig)
+}
+
+
+comp = c("DE", "SC", "MESO5", "ECTO", "EB")
+
+mirna_tab = format_table(mirna_logfc, mirna_pval)
+mrna_tab = format_table(mrna_logfc, mrna_pval, TRUE)
 
 target_obj = synGet(id="syn3461627")
 target = read.table(target_obj@filePath, check.names = F, header=F, sep="\t")
@@ -89,16 +116,18 @@ names(target) = c("mirna","gene")
 
 ```{r create-network}
 network_list = list()
-for (cont in unique(mrna_tab$variable)){
-    genes_de = mrna_tab %>% filter(variable == cont )
-    mirna_de = mirna_tab %>% filter(variable == cont)
-    target_de = target %>% filter(gene %in% genes_de$genes & mirna %in% mirna_de$genes)
-    idx_mirna = match(mirna_de$genes, target_de$mirna)
-    idx_mrna = match(genes_de$genes, target_de$gene)
-    target_de[idx_mirna[!is.na(idx_mirna)],"mirna_fc"] = mirna_de$value[!is.na(idx_mirna)]
-    target_de[idx_mrna[!is.na(idx_mrna)],"mrna_fc"] = genes_de$value[!is.na(idx_mrna)]
+for (contrast in intersect(unique(mrna_tab$cont), unique(mrna_tab$cont)) ){
+    genes_de = mrna_tab %>% filter(cont == contrast )
+    mirna_de = mirna_tab %>% filter(cont == contrast)
+    target_de = target %>% filter(gene %in% genes_de$gene & mirna %in% mirna_de$gene)
+    idx_mirna = match(mirna_de$gene, target_de$mirna)
+    idx_mrna = match(genes_de$gene, target_de$gene)
+    target_de[idx_mirna[!is.na(idx_mirna)],"mirna_fc"] = mirna_de$fc[!is.na(idx_mirna)]
+    target_de[idx_mrna[!is.na(idx_mrna)],"mrna_fc"] = genes_de$fc[!is.na(idx_mrna)]
     network = target_de %>% filter(!is.na(mirna_fc) & !is.na(mrna_fc) & mirna_fc * mrna_fc < 0)
-    network_list[[cont]] = network %>% mutate(contrast = cont)
+    if (dim(network)[1]>0){
+      network_list[[contrast]] = network %>% mutate(contrast = contrast)
+    }
 }
 
 ```
@@ -114,17 +143,17 @@ kable(as.data.frame(sapply(network_list, nrow)))
 ```{r summary-unique, results='asis'}
 dd = do.call(rbind, network_list)
 dd$id = paste0(dd$mirna,"->",dd$gene)
-dd_times = dd %>% group_by(id) %>% summarise(times = n()) %>% arrange(desc(times))
-kable(head(merge(dd, dd_times, by="id") %>% filter(times>1) %>% arrange(desc(times))))
-dd_complete = merge(dd, dd_times, by="id") %>% arrange(desc(times))
+dd_times = dd %>% group_by(id) %>% dplyr::summarise(times = n()) %>% dplyr::arrange(desc(times))
+kable(head(merge(dd, dd_times, by="id") %>% filter(times>1) %>% dplyr::arrange(desc(times))))
+dd_complete = merge(dd, dd_times, by="id") %>% dplyr::arrange(desc(times))
 
-write.table(dd, "~/repos/pcbc_c4_analysis/data/miRNA-mRNA_netowrk.tsv", quote=F, sep="\t", row.names=F)
+write.table(dd, "../../data/miRNA-mRNA_mixedEffect_netowrk.tsv", quote=F, sep="\t", row.names=F)
 ```
 
 
 ## meso_early network
 
-```{r network-gene-mirna-meso-early, fig.width=11, fig.height=11}
+```{r network-gene-mirna-meso-early, fig.width=11, fig.height=11, eval=FALSE, echo=FALSE}
 dd_reduce = merge(dd, dd_times, by="id")  %>% filter(grepl("MESO_EARLY", contrast) & !grepl("MESO_LATE", contrast)) %>% arrange(desc(times)) %>% mutate(contrast=gsub("MESO_EARLY", "", contrast))
 con = rbind( data.frame(start=dd_reduce$mirna, end=dd_reduce$gene),
              data.frame(start=dd_reduce$contrast, end=dd_reduce$mirna ))
@@ -143,7 +172,7 @@ plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,
 ## no-MESO network
 
 ```{r network-gene-mirna-no-meso}
-dd_reduce = merge(dd, dd_times, by="id") %>% filter( !grepl("MESO", contrast)) %>% arrange(desc(times))
+dd_reduce = merge(dd, dd_times, by="id") %>% filter( !grepl("MESO", contrast)) %>% dplyr::arrange(desc(times))
 con = rbind( data.frame(start=dd_reduce$mirna, end=dd_reduce$gene),
              data.frame(start=dd_reduce$contrast, end=dd_reduce$mirna ))
 con = con %>% distinct()
@@ -151,10 +180,10 @@ suppressMessages(library(igraph))
 gr<-graph.data.frame(con, directed = F)
 V(gr)$color<-"white"
 V(gr)$color[grep("hsa-",V(gr)$name)]<-"orange"
-V(gr)$color[grep("ENSG",V(gr)$name)]<-"black"
+V(gr)$color[grep("ENSG",V(gr)$name)]<-"grey80"
 V(gr)$name[grepl("hsa",V(gr)$name)]=""
 V(gr)$name[grepl("ENSG",V(gr)$name)]=""
-plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,vertex.label.cex=0.5,vertex.size=5,edge.width=2,vertex.label.color="black")
+plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,vertex.label.cex=0.8,vertex.size=5,edge.width=2,vertex.label.color="black")
 ```
 
 ## heatmap only with DE miRNA that target DE genes
@@ -165,9 +194,8 @@ pheatmap(rlog_Mat[as.character(unique(dd$mirna)),], clustering_distance_rows = "
 
 ```
 
-## NMF
 
-```{r nmf}
+```{r nmf, eval=FALSE, echo=FALSE}
 library(NMF)
 sub_rlog = rlog_Mat[as.character(unique(dd$mirna)),]
 res_nmf_4 = nmf(log2(sub_rlog^2+2), 4, nrun=20)
@@ -183,27 +211,35 @@ nmf_select = rownames(sub_rlog[unique(unlist(s)),])
 sapply(s, function(x){
     rownames(sub_rlog)[x]
 })
-```
 
-```{r hmf-heatmap}
 pheatmap(rlog_Mat[nmf_select,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub, show_rownames = F, show_colnames=F)
 ```
 
-```{r store,eval=F}
-SYNAPSE_STORE = FALSE
-parentId = "syn3484870"
-if (SYNAPSE_STORE){
-  code <- File('miRNA_mRNA_network.Rmd',name = 'miRNA-mRNA network Code',parentId = parentId)
-  code <- synStore(code, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA-mRNA network Code', executed='https://github.com/lpantano/pcbc_c4_analysis/blob/master/code/Rmd/miRNA_mRNA_network.Rmd')
+```{r store,eval=FALSE}
+parentId = "syn4596210"
+ActivityName = 'miRNA-mRNA network from mixedEffect DE'
+library(rGithubClient)
+# Github link
+thisFileName = "miRNA_mRNA_network.Rmd"
+thisRepo <- getRepo(repository = "lpantano/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='master')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+ALL_USED_IDs = c(mirna_rlog_obj$properties$id, metadata_obj@schema, mrna_logfc_obj@properties$id, mrna_pval_obj@properties$id, mirna_logfc_obj@properties$id, mirna_pval_obj@properties$id)
+
+CODE <- File(thisFileName,name = activityName,parentId = parentId)
+CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=activityName, executed=thisFile)
+
   
-  res <- File('~/repos/pcbc_c4_analysis/data/miRNA-mRNA_netowrk.tsv',name = 'miRNA-mRNA network list',parentId = parentId)
-  res <- synStore(res, used = c(mirna_rlog_obj$properties$id, metadata_obj@schema, mrna_obj@properties$id, mirna_obj@properties$id), activityName='miRNA-mRNA network list', executed=code)
+res <- File('../../data/miRNA-mRNA_netowrk.tsv',name = 'miRNA-mRNA network list',parentId = parentId)
+res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
 
 devtools::source_gist("6117476")
-knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd",
+knit2synapse("miRNA_mRNA_network.Rmd",
              owner=code@properties$id,
              overwrite=TRUE)
-
-}
 ```
 

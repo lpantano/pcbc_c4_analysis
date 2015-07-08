@@ -123,7 +123,7 @@ The following `r length(REMOVED_UID)` samples were removed:
 
 `r paste(gsub('_','\\\\_',REMOVED_UID), collapse= ',')` 
 
-`r dim(COUNT)[1]` genes and `r dim(COUNT)[2]` samples are considered for the analysis
+`r dim(mat)[1]` genes and `r dim(mat)[2]` samples are considered for the analysis
 
 ```{r data.split}
 processed = clean_and_sync_mirna_tables(metadata, mat, reads)
@@ -382,7 +382,7 @@ sapply(names(VOOM.GENE.EXPRESSION.POSTADJUSTED), function(x) VOOM.GENE.EXPRESSIO
 
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE, cache=FALSE}
+```{r synapsestore, echo=FALSE, include=FALSE, eval=FALSE, cache=FALSE}
 parentId = "syn4595584"
 activityName <- 'Covariate Analysis of miRNA data at each diff state with mixed effects'
   
@@ -398,13 +398,13 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
     
 # Populate wiki with results
-ALL_USED_IDs < c(metadata_id, reads_id, mat_id)
+ALL_USED_IDs <- c(metadata_id, reads_id, mat_id)
 
 CODE <- File(thisFileName,name = activityName,parentId = parentId)
 CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=activityName, executed=thisFile)
 
 storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.POSTADJUSTED, CODE){
-  diffstate = unique(COVARIATES$Diffname_short)  
+  diffstate = as.character(unique(COVARIATES$Diffname_short))
     
   # Drop unilevel covariates
   COVARIATES = droplevels(COVARIATES)
@@ -420,10 +420,10 @@ storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSI
               quote=F)
   COUNTS_OBJ <- File(paste0('../../data/Processed_CPM_Counts_',diffstate,'.tsv'),
                      name = paste('Processed logCPM Counts',diffstate),
-                     parentId = CODE$properties$id)
+                     parentId = parentId)
   COUNTS_OBJ <- synStore(COUNTS_OBJ, 
                          used = ALL_USED_IDs, 
-                         activityName = ActivityName, 
+                         activityName = activityName, 
                          executed = CODE) 
   
   # Adjustment Weights
@@ -438,10 +438,10 @@ storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSI
               quote=F)
   WEIGHTS_OBJ <- File(paste0('../../data/Adjusted_miRNA_Weights_',diffstate,'.tsv'),
                       name = paste('Adjusted Weights',diffstate),
-                      parentId = CODE$properties$id)
+                      parentId = parentId)
   WEIGHTS_OBJ <- synStore(WEIGHTS_OBJ, 
                           used = ALL_USED_IDs, 
-                          activityName = ActivityName, 
+                          activityName = activityName, 
                           executed = CODE)
   
   # Covariates Matrix
@@ -454,10 +454,10 @@ storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSI
               quote=F)
   COVARIATES_OBJ <- File(paste0('../../data/Adjusted_miRNA_Covariates_',diffstate,'.tsv'),
                          name = paste('Adjusted Covariates',diffstate),
-                         parentId = CODE$properties$id)
+                         parentId = parentId)
   COVARIATES_OBJ <- synStore(COVARIATES_OBJ, 
                              used = ALL_USED_IDs, 
-                             activityName = ActivityName, 
+                             activityName = activityName, 
                              executed = CODE)
   
   # Design Matrix
@@ -470,16 +470,17 @@ storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSI
               quote=F)
   DESIGN_OBJ <- File(paste0('../../data/Adjusted_miRNA_Design_',diffstate,'.tsv'),
                      name = paste('Adjusted Design',diffstate),
-                     parentId = CODE$properties$id)
+                     parentId = parentId)
   DESIGN_OBJ <- synStore(DESIGN_OBJ,
                          used = ALL_USED_IDs, 
-                         activityName = ActivityName, 
+                         activityName = activityName, 
                          executed = CODE)
 }
+
 STORED.FILES = lapply(COVARIATES[! names(COVARIATES) %in% c('MESOLATE')], storeFilesInSynapse, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.POSTADJUSTED, CODE)
 
 devtools::source_gist("6117476")
-knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DiffExpAnal_miRNA_mixedEffects_All.Rmd",
+knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd",
              owner=CODE@properties$id,
              overwrite=TRUE)
 

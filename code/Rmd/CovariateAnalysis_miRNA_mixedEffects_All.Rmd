@@ -382,10 +382,10 @@ p
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
 
-```{r synapsestore, echo=FALSE, include=FALSE, eval=TRUE}
+```{r synapsestore, echo=FALSE, include=FALSE, eval=FALSE}
 parentId = "syn4595971"
 
-ActivityName <- 'Covariate Analysis of eXpress aligned miRNA data with mixed effects modeling'
+ActivityName <- 'Covariate Analysis of miRNA data with mixed effects modeling'
   
 thisFileName <- 'CovariateAnalysis_miRNA_mixedEffects_All.Rmd'
   
@@ -420,20 +420,25 @@ EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName, execute
 WEIGHTS <- cbind(RESID.EXPR$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 colnames(WEIGHTS) <- colnames(EXPR)  
 write.table(WEIGHTS,file = '../../data/Adjusted_miRNA_Weights.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-WEIGHTS <- File('./../data/Adjusted_miRNA_Weights.tsv',name = 'Adjusted Weights',parentId = parentId)
+WEIGHTS <- File('../../data/Adjusted_miRNA_Weights.tsv',name = 'Adjusted Weights',parentId = parentId)
 WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE)
   
 # Covariates Matrix
 COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
 write.table(COVARIATES,file = '../../data/Adjusted_miRNA_Covariates.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-COVARIATES <- File('./../data/Adjusted_miRNA_Covariates.tsv',name = 'Adjusted Covariates',parentId = parentId)
+COVARIATES <- File('../../data/Adjusted_miRNA_Covariates.tsv',name = 'Adjusted Covariates',parentId = parentId)
 COVARIATES <- synStore(COVARIATES, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE)
 
 # Design Matrix
 DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
 write.table(DESIGN,file = '../../data/Adjusted_miRNA_Design.tsv',sep='\t',row.names=F,col.names=T,quote=F)
-DESIGN <- File('./../data/Adjusted_miRNA_Design.tsv',name = 'Adjusted Design',parentId = parentId)
+DESIGN <- File('../../data/Adjusted_miRNA_Design.tsv',name = 'Adjusted Design',parentId = parentId)
 DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE)
+
+devtools::source_gist("6117476")
+knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_mixedEffects_All.Rmd",
+             owner=CODE@properties$id,
+             overwrite=TRUE)
 ```
 |  *Results*           |  *SynapseID*                                                               |
 |  -------             |   ---------                                                                |
