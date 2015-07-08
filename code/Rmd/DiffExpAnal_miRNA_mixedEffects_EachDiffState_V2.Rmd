@@ -1,0 +1,379 @@
+---
+output:
+  knitrBootstrap::bootstrap_document:
+    theme: readable
+    highlight: zenburn
+    theme.chooser: TRUE
+    highlight.chooser: TRUE
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+```{r knitr,eval=F,echo=F}
+library(rmarkdown)
+library(knitrBootstrap)
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE, echo=FALSE)
+render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
+```
+
+# metadata and covariates
+
+```{r meta, cache=TRUE}
+library(tidyr)
+library(dplyr)
+library(plyr)
+library(knitr)
+library(synapseClient)
+library(DESeq2)
+library(edgeR)
+library(vcd)
+library(limma)
+library(reshape2)
+library(gplots)
+library(ggplot2)
+library(RColorBrewer)
+library(corrplot)
+library(psych)
+library(pheatmap)
+
+source("~/repos/pcbc_c4_analysis/code/R/lib/qc.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/getDesignMatrix.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/linColumnFinder.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/rownameToFirstColumn.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/getUpDownGenes.R")
+synapseLogin()
+
+# Get metadata
+metadata_id = "syn3219876"
+metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
+metadata = metadata_obj@values %>% distinct(UID)
+row.names(metadata) = metadata$UID
+
+mat_obj =  synGet(id="syn3355993")
+mat = read.table(mat_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
+# mat = read.csv("~/repos/pcbc_c4_analysis/data/mirna.csv", check.names = FALSE)
+
+reads_obj =  synGet(id="syn3355994")
+reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
+# reads = read.table("~/repos/pcbc_c4_analysis/data/smallRNA_reads.tsv", check.names = FALSE, row.names=1, header=T)
+
+```
+
+## Clean and sync tables
+
+Just make sure the tables are sync, same order for samples
+
+```{r clean_metadata}
+meta_clean = metadata[colnames(mat), ]
+meta_clean[meta_clean == 'N/A'] = NA
+meta_clean[is.na(meta_clean)] = 'unk'
+meta_clean[meta_clean == ''] = 'unk'
+```
+
+```{r clean}
+meta_clean = meta_clean[keep,]
+mat = mat[,keep]
+
+keep_meta = meta_clean$Diffname_short != "unk"
+meta_clean = meta_clean[keep_meta,]
+mat = mat[,keep_meta]
+
+meta_clean$mirna= log10(colSums(mat))
+
+new_factors = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
+```
+
+# Filtering by group
+
+I want to try if filtering by stable miRNAs give better signal. 
+I keep miRNAs that are express >= 5 (after normalization) in 90% of the samples of each group.
+That would mean to filtering by group and the put all miRNAs together.
+
+```{r sc}
+myPalette <- colorRampPalette(rev(brewer.pal(11, "Spectral")))
+sc <- scale_fill_gradientn(colours = myPalette(100), limits=c(1, 20))
+
+clean_table = function(what, mat, meta_clean, new_factors){
+    i = meta_clean %>% filter(Diffname_short %in% what)
+    m = mat[,i$UID]
+    c = do.call(paste0,i[,new_factors])
+
+    d = data.frame(row.names = colnames(m), cov=c)
+    dds = DESeqDataSetFromMatrix(m,colData = d,design = ~ 1)
+    dds = estimateSizeFactors(dds)
+    mat_norm = counts(dds, normalized=T)
+    cutoff = round(ncol(mat_norm)*0.9)
+    clean = as.data.frame((mat_norm[rowSums(mat_norm>5)>cutoff,]))
+    list(mat=clean, meta=i)
+}
+
+
+sc_clean = clean_table("SC",mat, meta_clean, new_factors)
+mesoearly_clean = clean_table("MESO_EARLY",mat, meta_clean, new_factors)
+mesolate_clean = clean_table("MESO_LATE",mat, meta_clean, new_factors)
+ecto_clean = clean_table("ECTO",mat, meta_clean, new_factors)
+eb_clean = clean_table("EB",mat, meta_clean, new_factors)
+de_clean = clean_table("DE",mat, meta_clean, new_factors)
+
+mir_sub = unique(c(row.names(sc_clean$mat),
+                   row.names(ecto_clean$mat),
+                   row.names(eb_clean$mat),
+                   row.names(de_clean$mat),
+                   row.names(mesolate_clean$mat),
+                   row.names(mesoearly_clean$mat)))
+samples_sub = unique(c(colnames(sc_clean$mat),
+                       colnames(ecto_clean$mat),
+                       colnames(eb_clean$mat),
+                       colnames(de_clean$mat),
+                       colnames(mesolate_clean$mat),
+                       colnames(mesoearly_clean$mat)))
+
+
+mat_sub = mat[mir_sub, samples_sub]
+meta_sub = meta_clean[samples_sub,]
+donor_ID = meta_clean[samples_sub, "Donor_ID"]
+# covariates = do.call(paste0,meta_sub[,new_factors])
+# qc_figures(mat_sub, meta_sub, covariates)
+```
+
+
+### Download data
+```{r setup, include=FALSE}
+
+# Diffstate Names
+DiffState = list(DE = 'DE', EB = 'EB', ECTO = 'ECTO', MES05 = 'MESO5', SC = 'SC')
+# Specify factor and continuous covarites pool (adjusted covariates will only be the subset of these covariates)
+# FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+# ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
+```
+
+### Differential Expression Analysis At Each Differentiation Stage
+Obtain differentially expressed genes with the following covariates (as obtained from covariates analysis) in the model:
+* Differentation Stage: DE
+  * Fixed Effects: Cell Line Type, run
+  * Random Effects: Donor ID
+* Differentation Stage: EB
+  * Fixed Effects: Gender, Donor Life Stage
+  * Random Effects: Donor ID
+* Differentation Stage: ECTO
+  * Fixed Effects: run
+  * Random Effects: Donor ID
+* Differentation Stage: MESO5
+  * Fixed Effects: run
+  * Random Effects: Donor ID
+* Differentation Stage: SC
+  * Fixed Effects: Gender, Donor Life Stage, run
+  * Random Effects: donor ID
+
+
+  
+```{r differential.expression, cache=TRUE}
+meta_sub$run = as.numeric(as.factor(meta_sub$run))
+meta_sub$Culture_Conditions = as.numeric(as.factor(meta_sub$Culture_Conditions))
+meta_sub$lane = as.numeric(as.factor(meta_sub$lane))
+meta_sub$Cell_Type_of_Origin_Level2  = gsub(" ",".",meta_sub$Cell_Type_of_Origin_Level2)
+
+for (nc in colnames(meta_sub))
+  meta_sub[,nc] = as.factor(meta_sub[,nc])
+
+# Post adjusted design matrix
+
+dge <- DGEList(counts=mat_sub)
+dge <- calcNormFactors(dge)
+
+# Function to calculate differential expression at each differentiation stages
+
+make_diffexp <- function(dge, mat_factors, target, block_factor){
+  writeLines('------------------------------------------------------------------------------')
+  writeLines(paste('Performing differential expression for',as.character(DiffState)))
+  writeLines('------------------------------------------------------------------------------')
+  
+  DESIGN = getDesignMatrix(mat_factors, Intercept = F)
+  dm = DESIGN$design[,linColumnFinder(DESIGN$design)$indepCols]
+
+  v <- voom(dge,dm, plot=TRUE)
+  
+  # Calculate correlation between donors
+  correlation <- duplicateCorrelation(v$E, design = dm, weights = v$W, block=block_factor)
+  
+  # Estimate sample weights with block correlation effects
+  GENE.EXPRESSION = voom(dge,
+                         design = dm,                         
+                         block = block_factor,
+                         correlation = correlation$cor,
+                         plot=F)
+  
+  # Fit linear model using mixed effects design
+  FIT = lmFit(GENE.EXPRESSION,
+              block = block_factor,
+              correlation = correlation$cor)
+  
+  # Make contrast to check differential expression between different differentiation stages
+  CONT.TO.CHECK = c("run", "lane", "Cell_Line_Type", "Cel_Line_of_Origin", "Tissue_of_Origin", "Reprogramming_Gene_Combination")
+  CONT.TO.CHECK = CONT.TO.CHECK[!!sapply(CONT.TO.CHECK, function(x, DESIGN) length(grep(x,colnames(DESIGN))), DESIGN)]
+  
+  ALL.CONT = c()
+  for (name in CONT.TO.CHECK){
+    CONT.NAMES <- colnames(DESIGN)[grep(name,colnames(DESIGN))]
+    CONT.NAMES <- combn(CONT.NAMES,2)
+    CONT.NAMES <- apply(CONT.NAMES,2,paste,collapse='-')
+  
+    CONT <- makeContrasts(contrasts=CONT.NAMES,levels=colnames(FIT$coefficients))
+    colnames(CONT) <- sapply(colnames(CONT),function(x){x <- gsub(name,'',x);
+                                                        x <- gsub('-','_vs_',x);
+                                                        x <- paste(target,x,sep='__')})
+    ALL.CONT = cbind(ALL.CONT, CONT)
+  }
+
+  # Refit contrasts
+  FIT.CONTRAST <- contrasts.fit(FIT,ALL.CONT)
+    
+  # Estimate moderated t-statistics
+  FIT.CONTRAST <- eBayes(FIT.CONTRAST)
+  
+  # Obtain all the differential expession combinations
+  DIFF.EXP <- list()
+  DIFF.EXP$logFC <- data.frame(row.names = rownames(v$E))
+  DIFF.EXP$adj.P.Val <- data.frame(row.names = rownames(v$E))
+  DIFF.EXP$SIG.SETS <- data.frame()
+
+  for (name in colnames(ALL.CONT)){
+    tmp <- topTable(FIT.CONTRAST, coef=name, number="Inf")    
+    DIFF.EXP$logFC[,name] <- tmp[rownames(DIFF.EXP$logFC),'logFC']
+    DIFF.EXP$adj.P.Val[,name] <- tmp[rownames(DIFF.EXP$adj.P.Val),'adj.P.Val'] 
+  
+    DIFF.EXP$SIG.SETS <- rbind(DIFF.EXP$SIG.SETS,
+                               getUpDownGenes(DIFF.EXP$adj.P.Val[,name], 
+                                              DIFF.EXP$logFC[,name], 
+                                              rownames(DIFF.EXP$logFC), 
+                                              name, 
+                                              FC_CUTOFF = 0))
+  }
+
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and log2FC >= 1
+  DIFF.EXP$SIG.EXP.POS <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC >= 1
+  DIFF.EXP$NUM.SIG.EXP.POS <- colSums(DIFF.EXP$SIG.EXP.POS)
+  
+  # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= -1
+  DIFF.EXP$SIG.EXP.NEG <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC <= -1
+  DIFF.EXP$NUM.SIG.EXP.NEG <- colSums(DIFF.EXP$SIG.EXP.NEG)
+    
+  return(list(DIFF.EXP = DIFF.EXP,
+              FIT = FIT,
+              FIT.CONTRAST = FIT.CONTRAST,
+              GENE.EXPRESSION = GENE.EXPRESSION,
+              CORRELATION = correlation))
+}
+
+# Compute differential expression at each differentiation stages
+DEXP = lapply(DiffState, getDifferentialExpression, DATA)
+```
+Number of differentially expressed genes at DE stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
+```{r print.imp.genes.DE}
+tmp1 = rownameToFirstColumn(as.data.frame(DEXP$DE$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
+colnames(tmp1) = c('Contrast Names','Up Regulated')
+tmp2 = rownameToFirstColumn(as.data.frame(DEXP$DE$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
+colnames(tmp2) = c('Contrast Names','Down Regulated')
+
+kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
+```
+Number of differentially expressed genes at EB stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
+```{r print.imp.genes.EB}
+tmp1 = rownameToFirstColumn(as.data.frame(DEXP$EB$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
+colnames(tmp1) = c('Contrast Names','Up Regulated')
+tmp2 = rownameToFirstColumn(as.data.frame(DEXP$EB$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
+colnames(tmp2) = c('Contrast Names','Down Regulated')
+
+kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
+```
+Number of differentially expressed genes at ECTO stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
+```{r print.imp.genes.ECTO}
+tmp1 = rownameToFirstColumn(as.data.frame(DEXP$ECTO$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
+colnames(tmp1) = c('Contrast Names','Up Regulated')
+tmp2 = rownameToFirstColumn(as.data.frame(DEXP$ECTO$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
+colnames(tmp2) = c('Contrast Names','Down Regulated')
+
+kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
+```
+Number of differentially expressed genes at MESO5 stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
+```{r print.imp.genes.MESO5}
+tmp1 = rownameToFirstColumn(as.data.frame(DEXP$MESO5$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
+colnames(tmp1) = c('Contrast Names','Up Regulated')
+tmp2 = rownameToFirstColumn(as.data.frame(DEXP$MESO5$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
+colnames(tmp2) = c('Contrast Names','Down Regulated')
+
+kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
+```
+Number of differentially expressed genes at SC stage for adj.P.Val <= 0.05 and logFC >= 1 or <= -1
+```{r print.imp.genes.SC}
+tmp1 = rownameToFirstColumn(as.data.frame(DEXP$SC$DIFF.EXP$NUM.SIG.EXP.POS),'ContrastNames')
+colnames(tmp1) = c('Contrast Names','Up Regulated')
+tmp2 = rownameToFirstColumn(as.data.frame(DEXP$SC$DIFF.EXP$NUM.SIG.EXP.NEG),'ContrastNames')
+colnames(tmp2) = c('Contrast Names','Down Regulated')
+
+kable(merge(tmp1,tmp2,by = 'Contrast Names', all = T), row.names = F)
+```
+```{r merge.results}
+logFC = join_all(lapply(DEXP, function(x){rownameToFirstColumn(x$DIFF.EXP$logFC, 'GeneNames')}), 
+                 by = 'GeneNames', match = 'all')
+adjPVal = join_all(lapply(DEXP, function(x){rownameToFirstColumn(x$DIFF.EXP$adj.P.Val, 'GeneNames')}), 
+                 by = 'GeneNames', match = 'all')
+comparisonSet = rbindlist(lapply(DEXP, function(x){x$DIFF.EXP$SIG.SETS}))
+ALL_USED_IDs = as.character(unlist(lapply(DATA, function(x){return(x$ALL_USED_IDs)})))
+```
+Get pvalue and fold changes of some important genes
+
+Fold change:
+```{r FC}
+kable(filter(logFC, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
+```
+Adjusted Pvalue:
+```{r PVAL}
+kable(filter(adjPVal, GeneNames %in% c('LARGE','FRG1','FRG1B','PEG10','SPEG')))
+```
+### Results
+Store files in synapse 
+```{r synapse.store, include = FALSE, eval=TRUE}
+activityName='Differential Expression Analysis of eXpress aligned data with mixed effects model at each differentiation stages'
+  
+thisFileName <- 'DiffExpAnal_mRNA_mixedEffects_EachDiffState_V2.Rmd'
+  
+# Github link
+thisRepo <- getRepo(repository = "th1vairam/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='mRNA')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+# Create results folder
+CODE <- Folder('./DiffExpAnal_mRNA_mixedEffects_EachDiffState_V2.Rmd',name = 'Differential Expression Analysis mRNA Mixed Effects EachDiffState',parentId = parentId)
+CODE <- synStore(CODE)
+      
+# Store logFC
+write.table(logFC,file='./DiffExpAnal_mRNA_mixedEffects_EachDiffState_logFC.tsv',sep='\t',row.names=F,quote=F)
+FC_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_EachDiffState_logFC.tsv',name = 'logFC',parentId = CODE$properties$id)
+FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+    
+# Store adjusted pvalue
+write.table(adjPVal,file='./DiffExpAnal_mRNA_mixedEffects_EachDiffState_adjPval.tsv',sep='\t',row.names=F,quote=F)
+PVAL_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_EachDiffState_adjPval.tsv',name = 'Adjusted Pvalue',parentId = CODE$properties$id)
+PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+
+# Store differentially expressed genes for comparison
+write.table(comparisonSet,file='./DiffExpAnal_mRNA_mixedEffects_EachDiffState_diffGenes.tsv',sep='\t',row.names=F,quote=F)
+SIG.SETS_OBJ <- File('./DiffExpAnal_mRNA_mixedEffects_EachDiffState_diffGenes.tsv',name = 'Differentily Expressed Genes comparison list',parentId = CODE$properties$id)
+annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='0')
+SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+```
+|  *Results*                                                      |  *SynapseID*                    |
+|  -------                                                        |   ---------                     |
+|  Log fold change                                                |  `r paste(FC_OBJ$properties$id,FC_OBJ$properties$versionNumber,sep='.')`           |
+|  Adjusted pvalues                                               |  `r paste(PVAL_OBJ$properties$id,PVAL_OBJ$properties$versionNumber,sep='.')`         |
+|  Differentially expressed genes (with fold change and pvalue)   |  `r paste(SIG.SETS_OBJ$properties$id,SIG.SETS_OBJ$properties$versionNumber,sep='.')` |
+
+### Executed: Source code
+`r paste0('[Source R Markdown](',print(thisFile),')')`

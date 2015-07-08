@@ -1,6 +1,6 @@
 
 ---
-title: "Covariate Analysis for miRNA data with mixed effect modeling performed at indivudal differentiation stages"
+title: "Covariate Analysis for miRNA data with mixed effect modeling"
 author: "Thanneer Perumal,Lorena Pantano"
 date: "`r date()`"
 output: html_document
