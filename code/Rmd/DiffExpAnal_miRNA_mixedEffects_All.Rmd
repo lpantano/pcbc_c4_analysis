@@ -86,15 +86,16 @@ donor_ID = meta_sub[, "Donor_ID"]
 # qc_figures(mat_sub, meta_sub, covariates)
 ```
 
-### heatmap with voom normalization
+## heatmap with voom normalization
 
 ```{r voom-norm}
-voom_mat = voom(mat_sub, design = model.matrix(~ 0 + ., model.frame(~ . , meta_sub[,new_factors])), plot=T)
+voom_mat = voom(mat_sub, design = model.matrix(~ 0 + ., model.frame(~ . , meta_sub[,new_factors])), plot=FALSE)
+
 pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
 
 
-```{r deseq-norm, cache=TRUE, eval=FALSE, echo=FALSe}
+```{r deseq-norm, cache=TRUE, eval=FALSE, echo=FALSE}
 d = meta_sub[,new_factors]
 dds = DESeqDataSetFromMatrix(mat_sub,colData = d,design = ~ Diffname_short)
 rlog_mat = rlog(dds)
@@ -243,7 +244,7 @@ pheatmap(voom_mat$E[keep,], clustering_distance_rows = "correlation", clustering
 ```
 
 
-```{r store}
+```{r save}
 library(rGithubClient)
 # Github link
 thisFileName = "DiffExpAnal_miRNA_mixedEffects_All.Rmd"
@@ -261,29 +262,31 @@ write.table(FC,file='../../data/DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',sep
 # Store adjusted pvalue
 write.table(PVAL,file='../../data/DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',sep='\t',row.names=F,quote=F)
 
+write.table(voom_mat$E, "../../data/miRNA_voom_Mat.tsv", quote=F, sep="\t") 
+
 ```
 
 
 ```{r store,eval=F}
 SYNAPSE_STORE = FALSE
 parentId = "syn4594275"
-activityName = 'miRNA mixedEffet Differential Expression Code'
+activityName = 'miRNA mixedEffet Differential Expression'
 if (SYNAPSE_STORE){
-  COVARIATES_CODE <- File('DiffExpAnal_miRNA_mixedEffects_All.Rmd',name = activityName,parentId = parentId)
-  COVARIATES_CODE <- synStore(COVARIATES_CODE, used = c(mat_obj$properties$id,metadata_obj@schema),activityName=activityName, executed='https://github.com/lpantano/pcbc_c4_analysis/blob/master/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd')
+  CODE <- File(thisFileName,name = activityName,parentId = parentId)
+  CODE <- synStore(CODE, used = c(mat_obj$properties$id,metadata_obj@schema),activityName=activityName, executed=thisFile)
   
-  DE_FC <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',name = 'logFC Differential Expression DiffnameShort',parentId = parentId)
-  DE_FC <- synStore(DE_FC, used = c(mat_obj$properties$id,metadata_obj@schema),activityName=activityName, executed=COVARIATES_CODE)
+  DE_FC <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',name = 'logFC Differential Expression mixedEffect',parentId = parentId)
+  DE_FC <- synStore(DE_FC, used = c(mat_obj$properties$id,metadata_obj@schema),activityName=activityName, executed=CODE)
 
-  DE_PV <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_pval.tsv',name = 'PVAL Differential Expression DiffnameShort',parentId = parentId)
-  DE_PV <- synStore(DE_FC, used = c(mat_obj$properties$id,metadata_obj@schema),activityName=activityName, executed=COVARIATES_CODE)
+  DE_PV <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',name = 'PVAL Differential Expression mixedEffect',parentId = parentId)
+  DE_PV <- synStore(DE_FC, used = c(mat_obj$properties$id,metadata_obj@schema),activityName=activityName, executed=CODE)
   
-  rlog <- File("../../data/miRNA_rlog_Mat.tsv", name= "miRNA rlog expression", parentId = parentId)
-  rlog <- synStore(rlog, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA rlog expression', executed=COVARIATES_CODE)
+  rlog <- File("../../data/miRNA_voom_Mat.tsv", name= "miRNA voom expression", parentId = parentId)
+  rlog <- synStore(rlog, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA voom expression', executed=CODE)
   
 devtools::source_gist("6117476")
 knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DiffExpAnal_miRNA_mixedEffects_All.Rmd",
-             owner=COVARIATES_CODE@properties$id,
+             owner=CODE@properties$id,
              overwrite=TRUE)
 
 }
