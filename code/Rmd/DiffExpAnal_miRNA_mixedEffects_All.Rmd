@@ -14,8 +14,9 @@ library(rmarkdown)
 library(knitrBootstrap)
 knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
                cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
-               message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE, echo=FALSE)
-render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
+               message=FALSE, prompt=TRUE, comment='', fig.cap='',
+               bootstrap.show.code=FALSE, echo=FALSE)
+# render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
 
 # metadata and covariates
@@ -177,7 +178,7 @@ these_factors = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_
 
 diffname <- make_diffexp(dge, meta_sub[,these_factors], "Diffname_short", donor_ID)
 
-print(colSums(!is.na(diffname$sig.test)))
+print(sot(colSums(!is.na(diffname$sig.test))))
 ```
 
 ```{r gender}
@@ -185,7 +186,7 @@ these_factors = c("Gender", "Diffname_short","Cell_Type_of_Origin_Level2","Donor
 
 gender <- make_diffexp(dge, meta_sub[,these_factors], "Gender", donor_ID)
 
-print(colSums(!is.na(gender$sig.test)))
+print(sort(colSums(!is.na(gender$sig.test))))
 ```
 
 ```{r celltype}
@@ -193,7 +194,7 @@ these_factors = c("Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","Dono
 
 celltype <- make_diffexp(dge, meta_sub[,these_factors], "Cell_Type_of_Origin_Level2", donor_ID)
 
-print(colSums(!is.na(celltype$sig.test)))
+print(sort(colSums(!is.na(celltype$sig.test))))
 ```
 
 ```{r culturecondition}
@@ -201,7 +202,7 @@ these_factors = c("Culture_Conditions","Cell_Type_of_Origin_Level2", "Gender", "
 
 culturecondition <- make_diffexp(dge, meta_sub[,these_factors], "Culture_Conditions", donor_ID)
 
-print(colSums(!is.na(culturecondition$sig.test)))
+print(sort(colSums(!is.na(culturecondition$sig.test))))
 ```
 
 ```{r donorlifestage}
