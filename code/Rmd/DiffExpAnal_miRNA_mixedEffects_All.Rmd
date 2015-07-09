@@ -173,6 +173,8 @@ make_diffexp <- function(dge, mat_factors, target, block_factor){
 
 ```
 
+## Diffname_Short
+
 ```{r diffname}
 these_factors = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
 
@@ -180,6 +182,8 @@ diffname <- make_diffexp(dge, meta_sub[,these_factors], "Diffname_short", donor_
 
 print(sort(colSums(!is.na(diffname$sig.test))))
 ```
+
+## Gender
 
 ```{r gender}
 these_factors = c("Gender", "Diffname_short","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
@@ -189,6 +193,8 @@ gender <- make_diffexp(dge, meta_sub[,these_factors], "Gender", donor_ID)
 print(sort(colSums(!is.na(gender$sig.test))))
 ```
 
+## Cell type
+
 ```{r celltype}
 these_factors = c("Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","Donor_Life_Stage","lane","Culture_Conditions","run")
 
@@ -197,6 +203,8 @@ celltype <- make_diffexp(dge, meta_sub[,these_factors], "Cell_Type_of_Origin_Lev
 print(sort(colSums(!is.na(celltype$sig.test))))
 ```
 
+## Culture condition
+
 ```{r culturecondition}
 these_factors = c("Culture_Conditions","Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","Donor_Life_Stage","lane","run")
 
@@ -204,6 +212,8 @@ culturecondition <- make_diffexp(dge, meta_sub[,these_factors], "Culture_Conditi
 
 print(sort(colSums(!is.na(culturecondition$sig.test))))
 ```
+
+## Donor life stage
 
 ```{r donorlifestage}
 these_factors = c("Donor_Life_Stage", "Culture_Conditions","Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","lane","run")
