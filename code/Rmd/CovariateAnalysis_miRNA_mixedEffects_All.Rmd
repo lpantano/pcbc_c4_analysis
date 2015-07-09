@@ -40,10 +40,11 @@ synapseLogin()
 # file.sources = list.files('../R/lib',pattern="*.R")
 # file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
 # tmp = sapply(file.sources,source,.GlobalEnv)
+source("../R/lib/calcResiduals.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/clean_mirna.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/getDesignMatrix.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/linColumnFinder.R")
-# source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
+source("~/repos/pcbc_c4_analysis/code/R/lib/getGeneFilteredGeneExprMatrix.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/rownameToFirstColumn.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/getAssociationStatistics.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/getFactorAssociationStatistics.R")
@@ -341,7 +342,7 @@ residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE_EXPRESSION,
 # Residualise matrix and add back differentiation stages
 RESID.EXPR = calcResiduals(geneBySampleValues = VOOM.ADJUSTED.GENE_EXPRESSION$E, 
                            samplesByCovariates = VOOM.ADJUSTED.GENE_EXPRESSION$design, 
-                           varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESO15", "Diffname_shortMESO30","Diffname_shortMESO5", "Diffname_shortSC"), 
+                           varsToAddBackIn = c("Diffname_shortDE", "Diffname_shortEB", "Diffname_shortECTO", "Diffname_shortMESOLATE", "Diffname_shortMESO5", "Diffname_shortSC"), 
                            sampleWeights = VOOM.ADJUSTED.GENE_EXPRESSION$weights)
 ```
 
@@ -365,14 +366,14 @@ pam.cluster <- pamk(t(RESID.EXPR), krange=2:10)
 # Plot first 2 PCs
 plotdata <- data.frame(UID=rownames(PC$rotation), 
                        PC1=PC$rotation[,1], 
-                       PC2=PC$rotation[,2], 
+                       PC3=PC$rotation[,3], 
                        cluster=pam.cluster$pamobject$clustering)
 
 plotdata <- mutate(plotdata, labels = "") 
 
 plotdata <- merge(plotdata, METADATA, by="UID")
 
-p <- ggplot(plotdata, aes(x=PC1, y=PC2))
+p <- ggplot(plotdata, aes(x=PC1, y=PC3))
 p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
 p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(values=1:7) + theme(legend.position="top") 
 p <- p + geom_text(aes(label= labels), size=4, hjust=0)

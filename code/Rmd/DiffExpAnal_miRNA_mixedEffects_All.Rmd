@@ -79,7 +79,7 @@ That would mean to filtering by group and the put all miRNAs together.
 
 ```{r load-clean}
 processed = clean_and_sync_mirna_tables(metadata, mat, reads, TRUE)
-mat_sub = processed$count
+mat_sub = processed$count$filteredExprMatrix
 meta_sub = processed$metadata
 
 donor_ID = meta_sub[, "Donor_ID"]
@@ -97,15 +97,15 @@ pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distan
 
 
 ```{r deseq-norm, cache=TRUE, eval=FALSE, echo=FALSE}
-d = meta_sub[,new_factors]
-dds = DESeqDataSetFromMatrix(mat_sub,colData = d,design = ~ Diffname_short)
-rlog_mat = rlog(dds)
-rlog_Mat = assay(rlog_mat)
-rlog_Mat[rlog_Mat > 20]=20
-write.table(rlog_Mat, "../../data/miRNA_rlog_Mat.tsv", quote=F, sep="\t") 
+# d = meta_sub[,new_factors]
+# dds = DESeqDataSetFromMatrix(mat_sub,colData = d,design = ~ Diffname_short)
+# rlog_mat = rlog(dds)
+# rlog_Mat = assay(rlog_mat)
+# rlog_Mat[rlog_Mat > 20]=20
+# write.table(rlog_Mat, "../../data/miRNA_rlog_Mat.tsv", quote=F, sep="\t") 
 
-meta_sub$mirna_b = cut(meta_sub$mirna, breaks=c(0,6,6.6,9))
-pheatmap(rlog_Mat, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
+# meta_sub$mirna_b = cut(meta_sub$mirna, breaks=c(0,6,6.6,9))
+# pheatmap(rlog_Mat, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
 ```
 
 ## Differential expression
