@@ -12,10 +12,6 @@ output:
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
 library(knitrBootstrap)
-knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
-               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
-               message=FALSE, prompt=TRUE, comment='', fig.cap='',
-               bootstrap.show.code=FALSE, echo=FALSE)
 # render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
 
@@ -48,6 +44,10 @@ source("../R/lib/linColumnFinder.R")
 # source("../R/lib/covariateAnalysis.R")
 source("../R/lib/rownameToFirstColumn.R")
 
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='',
+               bootstrap.show.code=FALSE, echo=FALSE)
 
 synapseLogin()
 
