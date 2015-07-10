@@ -5,6 +5,12 @@ author: "Thanneer Perumal,Lorena Pantano"
 date: "`r date()`"
 output: html_document
 ---
+```{r render, echo=FALSE, eval=FALSE}
+library(rmarkdown)
+render("CovariateAnalysis_miRNA_mixedEffects_All.Rmd")
+```
+
+
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
 ## It is assumed your working directory is where this file is
 
@@ -29,6 +35,7 @@ library('dplyr')
 library('knitr')
 library('stringr')
 #library('knit2synapse')
+options(bitmapType = 'cairo')
 
 ## Requires ggdendro
 devtools::source_url("https://raw.githubusercontent.com/chr1swallace/random-functions/master/R/ggplot-heatmap.R")
@@ -140,16 +147,27 @@ COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 #COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 ```
 
+
+### Covariates values
+
+```{r covariates.values}
+summary(COVARIATES)
+```
+
+
 ### Covariate clustering
 Determine relationship between covariates
 
 Covariate correlation
+
 ```{r covariates.correlation, fig.width=10, fig.height=10}
 COVARIATES.CORRELATION = getAssociationStatistics(COVARIATES, PVAL = 0.1)
 ggheatmap.show(COVARIATES.CORRELATION$plot, col.width=0.3, row.width=0.15)
 ```
+
 ### Normalisation (with NULL)
 Initial normalisation usign voom (with NULL design)
+
 ```{r initial.voom.normalisation}
 # Initial normalisation of gene expression
 VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, plot=T)
@@ -157,7 +175,20 @@ VOOM.GENE_EXPRESSION = voom(PROCESSED_COUNTS$filteredExprMatrix, design=NULL, pl
 # Initial design matrix with covariates under consideration
 DM = getDesignMatrix(COVARIATES, Intercept = F)
 ```
+
+Expression distribution
+
+```{r expr.distribution}
+dd = melt(VOOM.GENE_EXPRESSION$E)
+ggplot(dd, aes(x=value, group=X2)) +
+    geom_density() +
+    theme_bw() +
+    xlab("normalized voom expression")
+```
+
+
 Clustering of initial normalised data (with NULL design)
+
 ```{r decompse.normalise.data, fig.height=8, fig.width=8}
 # Find principal components of expression to plot
 PC <- prcomp(VOOM.GENE_EXPRESSION$E)

@@ -1,8 +1,9 @@
 ---
-title: "Covariate Analysis for miRNA data with mixed effect modeling performed at indivudal differentiation stages"
+title: Covariate Analysis for miRNA data with mixed effect modeling performed at indivudal
+  differentiation stages
 author: "Thanneer Perumal,Lorena Pantano"
-date: "`r date()`"
-output: html_document
+date: '`r date()`'
+output: pdf_document
 ---
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
@@ -18,6 +19,7 @@ library('ggplot2')
 library('gplots')
 library('limma')
 library('edgeR')
+library('DESeq2')
 # library('ctv')
 library('psych')
 library('reshape2')
@@ -40,25 +42,25 @@ synapseLogin()
 # file.sources = list.files('../R/lib',pattern="*.R")
 # file.sources = sapply(file.sources,function(x){return(paste('../R/lib',x,sep='/'))})
 # tmp = sapply(file.sources,source,.GlobalEnv)
-source("~/repos/pcbc_c4_analysis/code/R/lib/clean_mirna.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getDesignMatrix.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/linColumnFinder.R")
-# source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/rownameToFirstColumn.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getAssociationStatistics.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getFactorAssociationStatistics.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getDesignMat2Fact.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/runPCAandPlotCorrelations.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/runPCA.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/calcCompleteCorAndPlot.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getFactorAssociationStatistics.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getFactorContAssociationStatistics.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/corMatFDRthreshFunc.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/plotCorWithCompare.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/designMatVarsToCovars.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getCovariatesMap.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/getSymbolicNamesList.R")
-source("~/repos/pcbc_c4_analysis/code/R/lib/designMat2CovEffects.R")
+source("../R/lib/clean_mirna.R")
+source("../R/lib/getDesignMatrix.R")
+source("../R/lib/linColumnFinder.R")
+source("../R/lib/getGeneFilteredGeneExprMatrix.R")
+source("../R/lib/rownameToFirstColumn.R")
+source("../R/lib/getAssociationStatistics.R")
+source("../R/lib/getFactorAssociationStatistics.R")
+source("../R/lib/getDesignMat2Fact.R")
+source("../R/lib/runPCAandPlotCorrelations.R")
+source("../R/lib/runPCA.R")
+source("../R/lib/calcCompleteCorAndPlot.R")
+source("../R/lib/getFactorAssociationStatistics.R")
+source("../R/lib/getFactorContAssociationStatistics.R")
+source("../R/lib/corMatFDRthreshFunc.R")
+source("../R/lib/plotCorWithCompare.R")
+source("../R/lib/designMatVarsToCovars.R")
+source("../R/lib/getCovariatesMap.R")
+source("../R/lib/getSymbolicNamesList.R")
+source("../R/lib/designMat2CovEffects.R")
 
 options(xtable.type="html")
 
@@ -118,7 +120,10 @@ metadata_filtered <-
 
 REMOVED_UID <- setdiff(colnames(mat), metadata_filtered$UID)
 metadata <- metadata[metadata_filtered$UID,]
-mat <- mat[, metadata$UID]
+
+for (nc in setdiff(colnames(metadata), "UID") ) 
+  metadata[,nc] = as.factor(substr(gsub("[^[:alnum:]]", "", metadata[,nc]), 1, 40))
+
 ```
 The following `r length(REMOVED_UID)` samples were removed:
 
@@ -168,23 +173,26 @@ COVARIATES.CORRELATION = lapply(COVARIATES, covariateCorrelation)
 Initial normalisation usign voom (with NULL design)
 
 ```{r initial.voom.normalisation, cache=FALSE}
-initialVoomNormalisation <- function(COVARIATES, PROCESSED_COUNTS){
+initialVoomNormalisation <- function(COVARIATE, PROCESSED_COUNTS){
   writeLines('------------------------------------------------------------------------------')
-  diffstate = as.character(unique(COVARIATES$Diffname_short))
+  diffstate = as.character(unique(COVARIATE$Diffname_short))
   writeLines(paste('Differentiation state:',as.character(diffstate)))
   writeLines('------------------------------------------------------------------------------')
   # Drop unilevel covariates
-  COVARIATES = droplevels(COVARIATES)
-  COVARIATES = COVARIATES[,sapply(COVARIATES, function(x) length(levels(x))) > 1]
+  COVARIATE = droplevels(COVARIATE)
+  COVARIATE = COVARIATE[,sapply(COVARIATE, function(x) length(levels(x))) > 1]
   
   # Initial normalisation of gene expression
-  GENE.EXPRESSION = voom(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, design=NULL, plot=T)
-    
+  # GENE.EXPRESSION = voom(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, design=NULL, plot=T)
+  dds = DESeqDataSetFromMatrix(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, colData = COVARIATE, design = ~ 1)
+  dds = DESeq(dds)
+  GENE.EXPRESSION = assay(rlog(dds))
+  plotDispEsts(dds)
   # Initial design matrix with covariates under consideration  
-  DM = getDesignMatrix(COVARIATES, Intercept = F)
+  DM = getDesignMatrix(COVARIATE, Intercept = F)
   
   return(list(GENE.EXPRESSION = GENE.EXPRESSION,
-              COVARIATES = COVARIATES,
+              COVARIATES = COVARIATE,
               DM = DM))
 }
 VOOM.GENE.EXPRESSION.PREADJUSTED = lapply(COVARIATES, initialVoomNormalisation, PROCESSED_COUNTS)
@@ -204,7 +212,7 @@ plotPCAGeneExpression <- function(COVARIATES, VOOM.GENE.EXPRESSION.PREADJUSTED){
   COVARIATES = COVARIATES[,sapply(COVARIATES, function(x) length(levels(x))) > 1]
   
   # Find principal components of expression to plot
-  PC <- prcomp(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$GENE.EXPRESSION$E)
+  PC <- prcomp(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$GENE.EXPRESSION)
   
   # Plot first 2 PCs
   plotdata <- data.frame(UID=rownames(PC$rotation), 
@@ -243,7 +251,7 @@ plotGeneCovariatesCorrelation <- function(COVARIATES, VOOM.GENE.EXPRESSION.PREAD
   # Find correlation between PC's of gene expression with covariates
   DESIGN = getDesignMat2Fact(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM$design,FactorCovariates)
   colnames(DESIGN) = substr(colnames(DESIGN),1,50)
-  preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$GENE.EXPRESSION$E, DESIGN,'NULL design(voom-normalized)', isKeyPlot=TRUE)
+  preAdjustedSigCovars = runPCAandPlotCorrelations(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$GENE.EXPRESSION, DESIGN,'NULL design(voom-normalized)', isKeyPlot=TRUE)
   
   # Plot preAdjustedSigCovars
   print(preAdjustedSigCovars[["PC_res"]][[2]]$plotData)  
@@ -406,7 +414,7 @@ CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=activityName, executed=
 
 storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.POSTADJUSTED, CODE){
   diffstate = as.character(unique(COVARIATES$Diffname_short))
-    
+  print(diffstate)    
   # Drop unilevel covariates
   COVARIATES = droplevels(COVARIATES)
   COVARIATES = COVARIATES[,sapply(COVARIATES, function(x) length(levels(x))) > 1]    
@@ -446,7 +454,9 @@ storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSI
                           executed = CODE)
   
   # Covariates Matrix
-  COVARIATES <- rownameToFirstColumn(COVARIATES,'UID')
+  needed = VOOM.GENE.EXPRESSION.POSTADJUSTED[[diffstate]]$postAdjustCovars
+  
+  COVARIATES <- rownameToFirstColumn(COVARIATES[,c(needed,"Donor_ID")],'UID')
   write.table(COVARIATES,
               file = paste0('../../data/Adjusted_miRNA_Covariates_',diffstate,'.tsv'),
               sep='\t',
@@ -478,11 +488,11 @@ storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSI
                          executed = CODE)
 }
 
-STORED.FILES = lapply(COVARIATES[! names(COVARIATES) %in% c('MESOLATE')], storeFilesInSynapse, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.POSTADJUSTED, CODE)
+STORED.FILES = lapply(COVARIATES[! names(COVARIATES) %in% c('MESO30', 'MESO15')], storeFilesInSynapse, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.POSTADJUSTED, CODE)
 
 devtools::source_gist("6117476")
-knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd",
-             owner=CODE@properties$id,
-             overwrite=TRUE)
+# knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd",
+#             owner=CODE@properties$id,
+#             overwrite=TRUE)
 
 ```

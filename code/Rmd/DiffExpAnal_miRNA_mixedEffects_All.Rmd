@@ -11,6 +11,7 @@ output:
 ---
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
+render("DiffExpAnal_miRNA_mixedEffects_All.Rmd")
 library(knitrBootstrap)
 # render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
@@ -37,11 +38,10 @@ library(pheatmap)
 
 
 source("../R/lib/clean_mirna.R")
+source("../R/lib/getUpDownGenes.R")
 source("../R/lib/getGeneFilteredGeneExprMatrix.R")
-source("../R/lib/qc.R")
 source("../R/lib/getDesignMatrix.R")
 source("../R/lib/linColumnFinder.R")
-# source("../R/lib/covariateAnalysis.R")
 source("../R/lib/rownameToFirstColumn.R")
 
 knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
@@ -51,8 +51,8 @@ knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heig
 
 synapseLogin()
 
-FC_CUTOFF = 2
-PVAL_CUTOFF = 0.01
+FC_CUTOFF = 0.5
+PVAL_CUTOFF = 0.05
 # Get metadata
 metadata_id = "syn3219876"
 metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
@@ -81,18 +81,33 @@ That would mean to filtering by group and the put all miRNAs together.
 processed = clean_and_sync_mirna_tables(metadata, mat, reads, TRUE)
 mat_sub = processed$count$filteredExprMatrix
 meta_sub = processed$metadata
-
 donor_ID = meta_sub[, "Donor_ID"]
+
+# Find inter relation between factor covariates
+meta_sub = meta_sub[,c(FactorCovariates)]
+
+# Convert factor covariates to factors
+meta_sub[,FactorCovariates] = lapply(meta_sub[,FactorCovariates], factor)
+#COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
+
 # covariates = do.call(paste0,meta_sub[,new_factors])
 # qc_figures(mat_sub, meta_sub, covariates)
 ```
+
+### Covariates values
+
+```{r covariates.values}
+summary(meta_sub)
+```
+
+
 
 ## heatmap with voom normalization
 
 ```{r voom-norm}
 voom_mat = voom(mat_sub, design = model.matrix(~ 0 + ., model.frame(~ . , meta_sub[,new_factors])), plot=FALSE)
 
-pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Line_Type","size","mirna"),drop=F], show_rownames = F)
+pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub[,c("Diffname_short","Cell_Type_of_Origin_Level2"),drop=F], show_rownames = F)
 ```
 
 
@@ -117,7 +132,7 @@ pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distan
 meta_sub$run = as.numeric(as.factor(meta_sub$run))
 meta_sub$Culture_Conditions = substr(gsub("[^[:alnum:]]", "", meta_sub$Culture_Conditions), 1, 40)
 meta_sub$lane = as.numeric(as.factor(meta_sub$lane))
-meta_sub$Cell_Type_of_Origin_Level2  = gsub(" ","",meta_sub$Cell_Type_of_Origin_Level2)
+meta_sub$Cell_Type_of_Origin_Level2  = gsub("[^[:alnum:]]","",meta_sub$Cell_Type_of_Origin_Level2)
 
 for (nc in colnames(meta_sub))
   meta_sub[,nc] = as.factor(meta_sub[,nc])
@@ -158,13 +173,17 @@ make_diffexp <- function(dge, mat_factors, target, block_factor){
   diff.exp <- list()
   diff.exp$logFC <- data.frame(row.names = rownames(v$E))
   diff.exp$adj.P.Val <- data.frame(row.names = rownames(v$E))
-  diff.exp$sig.test <- data.frame(row.names = rownames(v$E))
+  diff.exp$sig.test <- data.frame()
   for (contrast in colnames(CONT)){
     tmp <- topTable(fit.cont, coef=contrast, number=Inf)
     sig <- tmp$adj.P.Val<=PVAL_CUTOFF & abs(tmp$logFC) >= FC_CUTOFF
     diff.exp$logFC[,contrast] <- tmp[rownames(diff.exp$logFC),'logFC']
     diff.exp$adj.P.Val[,contrast] <- tmp[rownames(diff.exp$adj.P.Val),'adj.P.Val']
-    diff.exp$sig.test[rownames(tmp)[sig], contrast] <- tmp[rownames(tmp)[sig],'logFC']
+    # diff.exp$sig.test[rownames(tmp)[sig], contrast] <- tmp[rownames(tmp)[sig],'logFC']
+    
+    diff.exp$sig.sets <- rbind(diff.exp$sig.sets,
+                               getUpDownGenes(diff.exp$adj.P.Val[,contrast], diff.exp$logFC[,contrast],
+                                              rownames(diff.exp$logFC), contrast, FC_CUTOFF = FC_CUTOFF))
 
   }
   
@@ -180,7 +199,7 @@ these_factors = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_
 
 diffname <- make_diffexp(dge, meta_sub[,these_factors], "Diffname_short", donor_ID)
 
-print(sort(colSums(!is.na(diffname$sig.test))))
+print(sort(table(diffname$sig.sets$Comparison)))
 ```
 
 ## Gender
@@ -190,7 +209,7 @@ these_factors = c("Gender", "Diffname_short","Cell_Type_of_Origin_Level2","Donor
 
 gender <- make_diffexp(dge, meta_sub[,these_factors], "Gender", donor_ID)
 
-print(sort(colSums(!is.na(gender$sig.test))))
+print(sort(table(gender$sig.sets$Comparison)))
 ```
 
 ## Cell type
@@ -200,7 +219,7 @@ these_factors = c("Cell_Type_of_Origin_Level2", "Gender", "Diffname_short","Dono
 
 celltype <- make_diffexp(dge, meta_sub[,these_factors], "Cell_Type_of_Origin_Level2", donor_ID)
 
-print(sort(colSums(!is.na(celltype$sig.test))))
+print(sort(table(celltype$sig.sets$Comparison)))
 ```
 
 ## Culture condition
@@ -210,7 +229,7 @@ these_factors = c("Culture_Conditions","Cell_Type_of_Origin_Level2", "Gender", "
 
 culturecondition <- make_diffexp(dge, meta_sub[,these_factors], "Culture_Conditions", donor_ID)
 
-print(sort(colSums(!is.na(culturecondition$sig.test))))
+print(sort(table(culturecondition$sig.sets$Comparison)))
 ```
 
 ## Donor life stage
@@ -220,8 +239,9 @@ these_factors = c("Donor_Life_Stage", "Culture_Conditions","Cell_Type_of_Origin_
 
 donorlifestage <- make_diffexp(dge, meta_sub[,these_factors], "Donor_Life_Stage", donor_ID)
 
-print(colSums(!is.na(donorlifestage$sig.test)))
+print(sort(table(donorlifestage$sig.sets$Comparison)))
 ```
+
 
 ```{r print.imp.genes}
 FC <- join_all(list(rownameToFirstColumn(diffname$logFC,'GeneNames'),
@@ -240,16 +260,23 @@ PVAL <- join_all(list(rownameToFirstColumn(diffname$adj.P.Val,'GeneNames'),
                  by = 'GeneNames',
                  match = 'all')
 
-keep = rowSums(abs(FC[,2:ncol(FC)]))>0 & rowSums(abs(PVAL[,2:ncol(PVAL)])<PVAL_CUTOFF)>0 
-sig.de = rownames(FC[keep,])
+SIG.SETS <- rbind(diffname$sig.sets,
+                  gender$sig.sets,
+                  celltype$sig.sets,                  
+                  culturecondition$sig.sets,
+                  donorlifestage$sig.sets)
+
+
+keep = unique(SIG.SETS$GeneSymbol)
 ```
 
 Total miRNAs de-regulated `r length(sig.de)` out of `r dim(dge)[1]`.
 
+Total miRNAs de-regulated in diffshort_name `r length(unique(diffname$sig.sets$GeneSymbol))` out of `r dim(dge)[1]`.
 
 
 ```{r limma-heatmap}
-keep = rowSums(abs(diffname$logFC)>FC_CUTOFF)>0 & rowSums(abs(diffname$adj.P.Val)<PVAL_CUTOFF)>0 
+keep = unique(diffname$GeneSymbol)
 
 pheatmap(voom_mat$E[keep,], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation =meta_sub[,c("Diffname_short","Cell_Line_Type"),drop=F], show_rownames = F, show_colnames = F)
 ```
@@ -262,6 +289,8 @@ write.table(FC,file='../../data/DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',sep
 
 # Store adjusted pvalue
 write.table(PVAL,file='../../data/DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',sep='\t',row.names=F,quote=F)
+
+write.table(SIG.SETS,file='../../data/DiffExpAnal_mRNA_mixedEffects_All_sigsets.tsv',sep='\t',row.names=F,quote=F)
 
 write.table(voom_mat$E, "../../data/miRNA_voom_Mat.tsv", quote=F, sep="\t") 
 
@@ -289,6 +318,12 @@ DE_FC <- synStore(DE_FC, used = c(mat_obj$properties$id,metadata_obj@schema),act
 
 DE_PV <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',name = 'PVAL Differential Expression mixedEffect',parentId = parentId)
 DE_PV <- synStore(DE_FC, used = c(mat_obj$properties$id,metadata_obj@schema),activityName=activityName, executed=CODE)
+
+# Store differentially expressed genes for comparison
+write.table(SIG.SETS,file='../../data/DiffExpAnal_miRNA_mixedEffects_All_diffmiRNAs.tsv',sep='\t',row.names=F,quote=F)
+SIG.SETS_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_All_diffmiRNAs.tsv',name = 'Differentily Expressed miRNA comparison list',parentId = CODE$properties$id)
+annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='0')
+SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 
 rlog <- File("../../data/miRNA_voom_Mat.tsv", name= "miRNA voom expression", parentId = parentId)
 rlog <- synStore(rlog, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA voom expression', executed=CODE)
