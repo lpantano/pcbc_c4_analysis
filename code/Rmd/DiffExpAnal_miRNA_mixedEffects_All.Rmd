@@ -69,7 +69,7 @@ reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.
 ## Clean and sync tables
 
 ```{r factors}
-new_factors = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
+FactorCovariates = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Donor_Life_Stage","lane","Culture_Conditions","run")
 ```
 
 # Filtering by group
@@ -329,7 +329,7 @@ rlog <- File("../../data/miRNA_voom_Mat.tsv", name= "miRNA voom expression", par
 rlog <- synStore(rlog, used = c(mat_obj$properties$id,metadata_obj@schema),activityName='miRNA voom expression', executed=CODE)
 ```
 
-```{r render-synapsy eval=FALSE, echo=FALSE}
+```{r render-synapsy, eval=FALSE, echo=FALSE}
 devtools::source_gist("6117476")
 knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DiffExpAnal_miRNA_mixedEffects_All.Rmd",
              owner=CODE@properties$id,
