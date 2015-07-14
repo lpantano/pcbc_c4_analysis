@@ -414,7 +414,7 @@ p
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
 
-```{r synapsestore, echo=FALSE, include=FALSE, eval=FALSE}
+```{r synapsestore, echo=FALSE, include=FALSE}
 parentId = "syn4595971"
 
 ActivityName <- 'Covariate Analysis of miRNA data with mixed effects modeling'
@@ -434,7 +434,7 @@ thisFile <- getPermlink(repository = thisRepo,
 ALL_USED_IDs <- c(metadata_id, reads_id, mat_id)
 
 CODE <- File(thisFileName,name = ActivityName,parentId = parentId)
-CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=activityName, executed=thisFile)
+CODE <- synStore(CODE, used = ALL_USED_IDs, activityName= ActivityName, executed=thisFile)
 
 # Store counts matrix
 COUNTS <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$E,'GeneName')
@@ -466,7 +466,9 @@ DESIGN <- rownameToFirstColumn(VOOM.ADJUSTED.GENE_EXPRESSION$design,'UID')
 write.table(DESIGN,file = '../../data/Adjusted_miRNA_Design.tsv',sep='\t',row.names=F,col.names=T,quote=F)
 DESIGN <- File('../../data/Adjusted_miRNA_Design.tsv',name = 'Adjusted Design',parentId = parentId)
 DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE)
+```
 
+```{render-synapsy, eval=FALSE, echo=FALSE}
 devtools::source_gist("6117476")
 knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_mixedEffects_All.Rmd",
              owner=CODE@properties$id,
