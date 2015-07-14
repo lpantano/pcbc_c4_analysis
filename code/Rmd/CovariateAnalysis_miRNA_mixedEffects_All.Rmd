@@ -126,8 +126,13 @@ metadata_filtered <-
 
 REMOVED_UID <- setdiff(colnames(mat), metadata_filtered$UID)
 metadata <- metadata[metadata_filtered$UID,]
+
+for (nc in setdiff(colnames(metadata), "UID") ) 
+  metadata[,nc] = as.factor(substr(gsub("[^[:alnum:]]", "", metadata[,nc]), 1, 40))
+
 mat <- mat[, metadata$UID]
 ```
+
 The following `r length(REMOVED_UID)` samples were removed:
 
 `r paste(gsub('_','\\\\_',REMOVED_UID), collapse= ',')` 
@@ -468,12 +473,14 @@ DESIGN <- File('../../data/Adjusted_miRNA_Design.tsv',name = 'Adjusted Design',p
 DESIGN <- synStore(DESIGN, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE)
 ```
 
-```{render-synapsy, eval=FALSE, echo=FALSE}
+```{r render-synapsy, eval=FALSE, echo=FALSE}
 devtools::source_gist("6117476")
 knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_mixedEffects_All.Rmd",
              owner=CODE@properties$id,
              overwrite=TRUE)
 ```
+
+
 |  *Results*           |  *SynapseID*                                                               |
 |  -------             |   ---------                                                                |
 |  Adjusted Expression |  `r paste(EXPR$properties$id,EXPR$properties$versionNumber,sep='.')`       |
