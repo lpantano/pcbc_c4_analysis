@@ -18,7 +18,7 @@ clean_and_sync_mirna_tables = function(metadata, mat, reads, collapse=FALSE){
   metadata$size_cat = reads[as.character(row.names(metadata)),"breaks"]
   metadata$mirna = log2(reads[as.character(row.names(metadata)),"mirna"])
   # join meso-15 and meso-30
-  stages =  gsub("-5","5",gsub("-30","LATE",gsub("-15","LATE",metadata$Diffname_short)))
+  stages =  gsub("-", "",metadata$Diffname_short)
   metadata$Diffname_short = as.character(stages)
 
   meta_clean = metadata[colnames(mat), ]
@@ -29,7 +29,7 @@ clean_and_sync_mirna_tables = function(metadata, mat, reads, collapse=FALSE){
   meta_clean = meta_clean[keep,]
   mat = mat[,keep]
 
-  keep_meta = meta_clean$Diffname_short %in% c("DE", "SC", "ECTO", "MESO5", "MESOLATE", "EB")
+  keep_meta = meta_clean$Diffname_short %in% c("DE", "SC", "ECTO", "MESO5", "MESO15", "MESO30", "EB")
   meta_clean = meta_clean[keep_meta,]
   mat = mat[,keep_meta]
 
@@ -39,7 +39,7 @@ clean_and_sync_mirna_tables = function(metadata, mat, reads, collapse=FALSE){
                                cols = row.names(meta_clean[meta_clean$Diffname_short==state,])
                                PROCESSED_COUNTS = getGeneFilteredGeneExprMatrix(mat[,cols],
                                                                                 MIN_GENE_CPM=10,
-                                                                                MIN_SAMPLE_PERCENT_WITH_MIN_GENE_CPM=0.7,
+                                                                                MIN_SAMPLE_PERCENT_WITH_MIN_GENE_CPM=0.9,
                                                                                 verbose=TRUE)
                              })
   names(PROCESSED_COUNTS) = unique(meta_clean$Diffname_short)
