@@ -450,7 +450,7 @@ EXPR <- synStore(EXPR, used = ALL_USED_IDs, activityName = ActivityName, execute
   
 # Adjustment Weights 
 WEIGHTS <- cbind(RESID.EXPR$GeneName,VOOM.ADJUSTED.GENE_EXPRESSION$weights)
-colnames(WEIGHTS) <- colnames(EXPR)  
+colnames(WEIGHTS) <- colnames(RESID.EXPR)  
 write.table(WEIGHTS,file = '../../data/Adjusted_miRNA_Weights.tsv',sep='\t',row.names=F,col.names=T,quote=F)
 WEIGHTS <- File('../../data/Adjusted_miRNA_Weights.tsv',name = 'Adjusted Weights',parentId = parentId)
 WEIGHTS <- synStore(WEIGHTS, used = ALL_USED_IDs, activityName = ActivityName, executed = CODE)
