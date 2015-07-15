@@ -5,6 +5,17 @@ author: "Thanneer Perumal,Lorena Pantano"
 date: "`r date()`"
 output: html_document
 ---
+```{r knitr-opts, echo=FALSE}
+options(xtable.type="html")
+
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='',
+               bootstrap.show.code=FALSE, echo=FALSE)
+
+```
+
+
 ```{r render, echo=FALSE, eval=FALSE}
 library(rmarkdown)
 render("CovariateAnalysis_miRNA_mixedEffects_All.Rmd")
@@ -68,12 +79,6 @@ source("~/repos/pcbc_c4_analysis/code/R/lib/getCovariatesMap.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/getSymbolicNamesList.R")
 source("~/repos/pcbc_c4_analysis/code/R/lib/designMat2CovEffects.R")
 
-options(xtable.type="html")
-
-knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
-               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
-               message=FALSE, prompt=TRUE, comment='', fig.cap='',
-               bootstrap.show.code=FALSE, echo=FALSE)
 ```
 
 ### Download data
@@ -400,20 +405,27 @@ PC <- prcomp(RESID.EXPR)
 pam.cluster <- pamk(t(RESID.EXPR), krange=2:10)
 
 # Plot first 2 PCs
-plotdata <- data.frame(UID=rownames(PC$rotation), 
-                       PC1=PC$rotation[,1], 
-                       PC3=PC$rotation[,3], 
-                       cluster=pam.cluster$pamobject$clustering)
+plotPCA = function(xi, yi){
+  plotdata <- data.frame(UID=rownames(PC$rotation), 
+                         PC1=PC$rotation[,xi], 
+                         PC2=PC$rotation[,yi], 
+                         cluster=pam.cluster$pamobject$clustering)
+  
+  plotdata <- mutate(plotdata, labels = "") 
+  
+  plotdata <- merge(plotdata, METADATA, by="UID")
+  
+  p <- ggplot(plotdata, aes(x=PC1, y=PC2)) + labs(list(x=paste0("PC",xi), y=paste0("PC",yi)))
+  p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
+  p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(values=1:7) + theme(legend.position="top") 
+  p <- p + geom_text(aes(label= labels), size=4, hjust=0)
+  print(p)
+  
+}
 
-plotdata <- mutate(plotdata, labels = "") 
-
-plotdata <- merge(plotdata, METADATA, by="UID")
-
-p <- ggplot(plotdata, aes(x=PC1, y=PC3))
-p <- p + geom_point(aes(color=factor(cluster), shape=Diffname_short, size=Gender))
-p <- p + theme_bw() + scale_size_manual(values = c(4, 2)) + scale_shape_manual(values=1:7) + theme(legend.position="top") 
-p <- p + geom_text(aes(label= labels), size=4, hjust=0)
-p
+plotPCA(1,2)
+plotPCA(1,3)
+plotPCA(2,3)
 ```
 
 ### Synapse Store
