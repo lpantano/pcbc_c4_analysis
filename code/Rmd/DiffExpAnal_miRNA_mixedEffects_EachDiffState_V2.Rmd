@@ -1,26 +1,27 @@
 ---
-output:
-  knitrBootstrap::bootstrap_document:
-    theme: readable
-    highlight: zenburn
-    theme.chooser: TRUE
-    highlight.chooser: TRUE
-  html_document:
-    toc: true
-    highlight: zenburn
+title: Differential Expression Analysis for miRNA data with mixed effect modeling performed at indivudal
+  differentiation stages
+author: "Thanneer Perumal,Lorena Pantano"
+date: '`r date()`'
+output: html_document
 ---
+
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
-library(knitrBootstrap)
+render("~/repos/pcbc_c4_analysis/code/Rmd/DiffExpAnal_miRNA_mixedEffects_EachDiffState_V2.Rmd")
+```
+
+```{r knitr-options, echo=FALSE}
 knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
                cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
                message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE, echo=FALSE)
-render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
+
 ```
+
 
 # metadata and covariates
 
-```{r meta, cache=TRUE}
+```{r meta}
 library(tidyr)
 library(dplyr)
 library(plyr)
@@ -47,16 +48,20 @@ source("../R/lib/rownameToFirstColumn.R")
 source("../R/lib/getUpDownGenes.R")
 synapseLogin()
 
+
 ```
 
 ## Clean and sync tables
 
 Just make sure the tables are sync, same order for samples
 
-```{r getdata, cache=TRUE, include=FALSE}
+```{r getdata, include=FALSE}
 COVARIATES_FOLDER = "syn4595584"
 All.Files = synQuery(paste0('select * from file where parentId == "',COVARIATES_FOLDER,'"'))
 DiffState = list(DE = 'DE', MESO5 = 'MESO5', EB = 'EB', SC = 'SC')
+FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
+# ContCovariates = c('PassageAtThaw', 'PassageAtHarvest')
+ContCovariates = NULL
 
 # Function to download expression counts, 
 getData <- function(DiffState, All.Files, FactorCovariates, ContCovariates){
@@ -107,15 +112,19 @@ Obtain differentially expressed genes with the following covariates (as obtained
 * Differentation Stage: DE
   * Fixed Effects: Cell Line Type, run
   * Random Effects: Donor ID
+  
 * Differentation Stage: EB
   * Fixed Effects: Gender
   * Random Effects: Donor ID
+  
 * Differentation Stage: ECTO
   * Fixed Effects: run
   * Random Effects: Donor ID
+  
 * Differentation Stage: MESO5
   * Fixed Effects: run, Cell_Line_Type
   * Random Effects: Donor ID
+  
 * Differentation Stage: SC
   * Fixed Effects: Cell_Type_of_Origin_Level2, Culture_Conditions
   * Random Effects: donor ID
@@ -129,7 +138,7 @@ getDifferentialExpression <- function(diffstate, DATA){
 
   # Post adjusted design matrix
   DESIGN = DATA[[diffstate]]$DESIGN
-  print(colnames(DESIGN))
+  
 
   # Estimate sample weights
   GENE.EXPRESSION = voom(DATA[[diffstate]]$PROC.COUNT,
@@ -165,8 +174,10 @@ getDifferentialExpression <- function(diffstate, DATA){
   }
 
   ALL.CONT = c()
-  print(CONT.TO.CHECK)
-  
+  writeLines('------------------------------------------------------------------------------')
+  writeLines(paste0("Covariates for this stage: ", CONT.TO.CHECK))
+  writeLines('------------------------------------------------------------------------------')
+
   for (name in CONT.TO.CHECK){
     CONT.NAMES <- colnames(DESIGN)[grep(name,colnames(DESIGN))]
     # CONT.NAMES <- unique(DATA[[diffstate]]$COVARIATES[,name])  
@@ -215,11 +226,11 @@ getDifferentialExpression <- function(diffstate, DATA){
   }
 
   # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and log2FC >= 0.5
-  DIFF.EXP$SIG.EXP.POS <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC >= 0.5
+  DIFF.EXP$SIG.EXP.POS <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC >= 1
   DIFF.EXP$NUM.SIG.EXP.POS <- colSums(DIFF.EXP$SIG.EXP.POS)
 
   # Get number of significantly differentialy expressed genes with adj.P.Val <= 0.05 and logFC <= -0.5
-  DIFF.EXP$SIG.EXP.NEG <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC <= -0.5
+  DIFF.EXP$SIG.EXP.NEG <- DIFF.EXP$adj.P.Val<=0.05 & DIFF.EXP$logFC <= -1
   DIFF.EXP$NUM.SIG.EXP.NEG <- colSums(DIFF.EXP$SIG.EXP.NEG)
 
   return(list(DIFF.EXP = DIFF.EXP,
@@ -292,8 +303,8 @@ ALL_USED_IDs = as.character(unlist(lapply(DATA, function(x){return(x$ALL_USED_ID
 ### Results
 Store files in synapse 
 
-```{r synapse.store, include = FALSE, eval=FALSE}
-parentId = ''
+```{r synapse.store, echo = FALSE}
+parentId = 'syn4614674'
 activityName='Differential Expression Analysis of miRNA data with mixed effects model at each differentiation stages'
   
 thisFileName <- 'DiffExpAnal_miRNA_mixedEffects_EachDiffState_V2.Rmd'
@@ -326,6 +337,15 @@ SIG.SETS_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_di
 annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='0')
 SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
 ```
+
+
+```{r render-synapse, echo=FALSE, eval=FALSE}
+devtools::source_gist("6117476")
+knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DiffExpAnal_miRNA_mixedEffects_EachDiffState_V2.Rmd",
+             owner=CODE@properties$id,
+             overwrite=TRUE)
+```
+
 
 |  *Results*                                                      |  *SynapseID*                    |
 |  -------                                                        |   ---------                     |
