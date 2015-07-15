@@ -16,6 +16,14 @@ library(knitrBootstrap)
 # render("~/repos/pcbc_c4_analysis/code/Rmd/DE_MatrixmiRNA_seqbuster.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
 
+```{r knitr-report, echo=FALSE}
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='',
+               bootstrap.show.code=FALSE, echo=FALSE)
+```
+
+
 # metadata and covariates
 
 ```{r meta, cache=TRUE}
@@ -44,10 +52,6 @@ source("../R/lib/getDesignMatrix.R")
 source("../R/lib/linColumnFinder.R")
 source("../R/lib/rownameToFirstColumn.R")
 
-knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
-               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
-               message=FALSE, prompt=TRUE, comment='', fig.cap='',
-               bootstrap.show.code=FALSE, echo=FALSE)
 
 synapseLogin()
 
@@ -69,8 +73,6 @@ reads_obj =  synGet(id=reads_id)
 reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
 
 ```
-
-## Clean and sync tables
 
 ```{r filtering}
 #### Pre processing mRNA expression counts and metadata ####
@@ -97,7 +99,7 @@ FactorCovariates = c("Diffname_short","Gender","Cell_Type_of_Origin_Level2","Don
 
 # Filtering by group
 
-I keep miRNAs that are express >= 5 (after normalization) in 90% of the samples of each group.
+I keep miRNAs that are express >= 10 (after normalization) in 90% of the samples of each group.
 That would mean to filtering by group and the put all miRNAs together.
 
 ```{r load-clean}
@@ -146,6 +148,8 @@ pheatmap(voom_mat$E, clustering_distance_rows = "correlation", clustering_distan
 
 ## Differential expression
 
+log2FC cutoff: 0.5
+FDR cutoff: 0.05
 
 ```{r limma}
 
