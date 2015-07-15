@@ -3,8 +3,16 @@ title: Covariate Analysis for miRNA data with mixed effect modeling performed at
   differentiation stages
 author: "Thanneer Perumal,Lorena Pantano"
 date: '`r date()`'
-output: pdf_document
+output: html_document
 ---
+
+```{r knitr-render, echo=FALSE}
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='',
+               bootstrap.show.code=FALSE, echo=FALSE)
+```
+
 
 ```{r libs, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
 ## It is assumed your working directory is where this file is
@@ -64,10 +72,6 @@ source("../R/lib/designMat2CovEffects.R")
 
 options(xtable.type="html")
 
-knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
-               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
-               message=FALSE, prompt=TRUE, comment='', fig.cap='',
-               bootstrap.show.code=FALSE, echo=FALSE)
 ```
 
 ### Download data
@@ -489,10 +493,12 @@ storeFilesInSynapse <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRESSI
 }
 
 STORED.FILES = lapply(COVARIATES[! names(COVARIATES) %in% c('MESO30', 'MESO15')], storeFilesInSynapse, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.POSTADJUSTED, CODE)
-
-devtools::source_gist("6117476")
-# knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd",
-#             owner=CODE@properties$id,
-#             overwrite=TRUE)
-
 ```
+
+```{r render-synapse, echo=FALSE, eval=FALSE}
+devtools::source_gist("6117476")
+knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd",
+             owner=CODE@properties$id,
+             overwrite=TRUE)
+```
+
