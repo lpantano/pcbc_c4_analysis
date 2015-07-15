@@ -6,6 +6,11 @@ date: '`r date()`'
 output: html_document
 ---
 
+```{r knitr,eval=F,echo=F}
+library(rmarkdown)
+render("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd")
+```
+
 ```{r knitr-render, echo=FALSE}
 knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
                cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
@@ -362,12 +367,16 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
                                              residualSigCovars$Effects.significantCovars)
     covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
     
+    # print(covariatesEffects)
+    # print(colnames(VOOM.GENE.EXPRESSION.POSTADJUSTED$SC$GENE.EXPRESSION$design))
     postAdjustCovars = c(postAdjustCovars,names(which.max(covariatesEffects)))
     
     write.table(diffstate, file = './temp.txt', append=T)
     write.table(postAdjustCovars, file = './temp.txt', append=T)
     loopCount = loopCount + 1
   }
+  
+  
   writeLines('--------------------------------------------------------------------------------------------')
   writeLines(paste('Using following covariates in the final model', paste(paste(gsub('_','\\\\_',postAdjustCovars),collapse=','),'as fixed effects')))
   writeLines('--------------------------------------------------------------------------------------------')
@@ -377,7 +386,34 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
   print(residualSigCovars[["PC_res"]][[2]]$plotData)
   writeLines('---------------------------------------------------------------------------------------------')
   if (length(postAdjustCovars)>0){
-    print("with result")
+        # Post adjusted design matrix
+    DM1 = getDesignMatrix(COVARIATES[,postAdjustCovars,drop=F],Intercept = F)
+    DM1$design = DM1$design[,linColumnFinder(DM1$design)$indepCols]
+    DM1$design = DM1$design[,colSums(DM1$design) > 1]
+    # Estimate sample weights with null design
+    GENE.EXPRESSION = voom(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, 
+                           design = DM1$design, 
+                           plot=F)
+    # Estimate correlation between donor effects
+    CORRELATION = duplicateCorrelation(GENE.EXPRESSION, 
+                                       design = DM1$design,
+                                       block = COVARIATES$Donor_ID)
+  
+    # Estimate sample weights with correlation efects
+    GENE.EXPRESSION = voom(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, 
+                           design = DM1$design,
+                           block = COVARIATES$Donor_ID,
+                           correlation = CORRELATION$consensus.cor,
+                           plot=F)
+    
+    # Fit linear model with chosen design
+    FIT = lmFit(GENE.EXPRESSION,
+                block = COVARIATES$Donor_ID,
+                correlation = CORRELATION$consensus.cor)
+    
+    # Residuals after normalisation
+    RESIDUAL.GENE.EXPRESSION = residuals.MArrayLM(FIT,GENE.EXPRESSION$E)
+  
     return(list(GENE.EXPRESSION = GENE.EXPRESSION,
                 FIT = FIT,
                 RESIDUAL.GENE.EXPRESSION = RESIDUAL.GENE.EXPRESSION,
@@ -385,6 +421,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
                 postAdjustCovars = postAdjustCovars))
   }
 }  
+
 VOOM.GENE.EXPRESSION.POSTADJUSTED = lapply(COVARIATES, iterativeNormalisation, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.PREADJUSTED, PREADJUSTED.COVARIATES)
 ```
 
