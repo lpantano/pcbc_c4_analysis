@@ -142,7 +142,6 @@ The following `r length(REMOVED_UID)` samples were removed:
 
 `r paste(gsub('_','\\\\_',REMOVED_UID), collapse= ',')` 
 
-`r dim(mat)[1]` genes and `r dim(mat)[2]` samples are considered for the analysis
 
 ```{r data.split}
 processed = clean_and_sync_mirna_tables(metadata, mat, reads, TRUE)
@@ -157,6 +156,7 @@ COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 #COVARIATES[,ContCovariates] = lapply(COVARIATES[,ContCovariates], as.numeric)
 ```
 
+`r dim(PROCESSED_COUNTS)[1]` genes and `r dim(PROCESSED_COUNTS)[2]` samples are considered for the analysis
 
 ### Covariates values
 
