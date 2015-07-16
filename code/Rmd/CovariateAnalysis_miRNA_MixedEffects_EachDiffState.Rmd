@@ -138,7 +138,6 @@ The following `r length(REMOVED_UID)` samples were removed:
 
 `r paste(gsub('_','\\\\_',REMOVED_UID), collapse= ',')` 
 
-`r dim(mat)[1]` genes and `r dim(mat)[2]` samples are considered for the analysis
 
 ```{r data.split}
 processed = clean_and_sync_mirna_tables(metadata, mat, reads)
@@ -154,6 +153,16 @@ COVARIATES[,FactorCovariates] = lapply(COVARIATES[,FactorCovariates], factor)
 
 COVARIATES = split(COVARIATES,COVARIATES$Diffname_short)
 ```
+
+
+Number of samples and miRNAs per condition.
+
+```{r stats-samples-mirnas, results="asis"}
+dd = sapply(names(PROCESSED_COUNTS), function(x){dim(PROCESSED_COUNTS[[x]]$filteredExprMatrix)})
+rownames(dd) = c("mirnas", "samples")
+kable(dd)
+```
+
 
 ### Covariate clustering
 Covariate correlation
@@ -432,7 +441,7 @@ sapply(names(VOOM.GENE.EXPRESSION.POSTADJUSTED), function(x) VOOM.GENE.EXPRESSIO
 
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
-```{r synapsestore, echo=FALSE, include=FALSE, eval=FALSE, cache=FALSE}
+```{r synapsestore, echo=FALSE, include=FALSE, cache=FALSE}
 parentId = "syn4595584"
 activityName <- 'Covariate Analysis of miRNA data at each diff state with mixed effects'
   
