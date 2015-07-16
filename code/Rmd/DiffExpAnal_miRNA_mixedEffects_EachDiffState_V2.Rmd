@@ -310,6 +310,7 @@ activityName='Differential Expression Analysis of miRNA data with mixed effects 
 thisFileName <- 'DiffExpAnal_miRNA_mixedEffects_EachDiffState_V2.Rmd'
   
 # Github link
+library(rGithubClient)
 thisRepo <- getRepo(repository = "lpantano/pcbc_c4_analysis", 
                     ref="branch", 
                     refName='master')
@@ -318,24 +319,24 @@ thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
 
 # Create results folder
-CODE <- Folder('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_V2.Rmd',name = 'Differential Expression Analysis miRNA Mixed Effects EachDiffState',parentId = parentId)
-CODE <- synStore(CODE)
+CODE <- File(thisFileName,name = activityName,parentId = parentId)
+CODE <- synStore(CODE, used = ALL_USED_IDs,activityName=activityName, executed=thisFile)
       
 # Store logFC
 write.table(logFC,file='../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_logFC.tsv',sep='\t',row.names=F,quote=F)
 FC_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_logFC.tsv',name = 'logFC',parentId = CODE$properties$id)
-FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=CODE)
     
 # Store adjusted pvalue
 write.table(adjPVal,file='../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_adjPval.tsv',sep='\t',row.names=F,quote=F)
 PVAL_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_adjPval.tsv',name = 'Adjusted Pvalue',parentId = CODE$properties$id)
-PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=CODE)
 
 # Store differentially expressed genes for comparison
 write.table(comparisonSet,file='../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_diffGenes.tsv',sep='\t',row.names=F,quote=F)
 SIG.SETS_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_diffGenes.tsv',name = 'Differentily Expressed miRNA comparison list',parentId = CODE$properties$id)
-annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='0')
-SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=thisFile)
+annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='1')
+SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=CODE)
 ```
 
 
