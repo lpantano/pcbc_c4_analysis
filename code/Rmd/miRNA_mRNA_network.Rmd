@@ -12,10 +12,7 @@ output:
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
 library(knitrBootstrap)
-knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
-               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
-               message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE, echo=FALSE)
-render("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
+#render("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
 
 
@@ -44,6 +41,10 @@ source("~/repos/pcbc_c4_analysis/code/R/lib/qc.R")
 # source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
 
 synapseLogin()
+
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE, echo=FALSE)
 
 mirna_pval_obj =  synGet(id="syn4596141")
 mirna_pval = read.table(mirna_pval_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
@@ -154,7 +155,7 @@ write.table(dd, "../../data/miRNA-mRNA_mixedEffect_netowrk.tsv", quote=F, sep="\
 ## meso_early network
 
 ```{r network-gene-mirna-meso-early, fig.width=11, fig.height=11, eval=FALSE, echo=FALSE}
-dd_reduce = merge(dd, dd_times, by="id")  %>% filter(grepl("MESO_EARLY", contrast) & !grepl("MESO_LATE", contrast)) %>% arrange(desc(times)) %>% mutate(contrast=gsub("MESO_EARLY", "", contrast))
+dd_reduce = merge(dd, dd_times, by="id")  %>% filter(grepl("MESO_EARLY", contrast) & !grepl("MESO_LATE", contrast)) %>% dplyr::arrange(desc(times)) %>% mutate(contrast=gsub("MESO_EARLY", "", contrast))
 con = rbind( data.frame(start=dd_reduce$mirna, end=dd_reduce$gene),
              data.frame(start=dd_reduce$contrast, end=dd_reduce$mirna ))
 con = con %>% distinct()
