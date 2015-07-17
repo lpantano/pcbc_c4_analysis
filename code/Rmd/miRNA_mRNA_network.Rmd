@@ -1,14 +1,10 @@
 ---
-output:
-  knitrBootstrap::bootstrap_document:
-    theme: readable
-    highlight: zenburn
-    theme.chooser: TRUE
-    highlight.chooser: TRUE
-  html_document:
-    toc: true
-    highlight: zenburn
+title: "miRNA-mRNA network analysis with mixed effect modilng"
+author: "Lorena Pantano"
+date: "`r date()`"
+output: html_document
 ---
+
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
 library(knitrBootstrap)
@@ -28,20 +24,12 @@ library(tidyr)
 library(dplyr)
 library(knitr)
 library(synapseClient)
-library(DESeq2)
-library(edgeR)
-library(vcd)
 library(limma)
 library(reshape2)
 library(gplots)
 library(ggplot2)
 library(RColorBrewer)
-library(corrplot)
-library(psych)
 library(pheatmap)
-
-source("~/repos/pcbc_c4_analysis/code/R/lib/qc.R")
-# source("~/repos/pcbc_c4_analysis/code/R/lib/covariateAnalysis.R")
 
 synapseLogin()
 
@@ -114,6 +102,8 @@ names(target) = c("mirna","gene")
 
 # Detect networks
 
+Using Adjusted pval < 0.01 and abs(logFC) > 2
+
 ```{r create-network}
 network_list = list()
 for (contrast in intersect(unique(mrna_tab$cont), unique(mrna_tab$cont)) ){
@@ -147,11 +137,8 @@ dd_times = dd %>% group_by(id) %>% dplyr::summarise(times = n()) %>% dplyr::arra
 kable(head(merge(dd, dd_times, by="id") %>% filter(times>1) %>% dplyr::arrange(desc(times))))
 dd_complete = merge(dd, dd_times, by="id") %>% dplyr::arrange(desc(times))
 
-write.table(dd, "../../data/miRNA-mRNA_mixedEffect_netowrk.tsv", quote=F, sep="\t", row.names=F)
 ```
 
-
-## meso_early network
 
 ```{r network-gene-mirna-meso-early, fig.width=11, fig.height=11, eval=FALSE, echo=FALSE}
 dd_reduce = merge(dd, dd_times, by="id")  %>% filter(grepl("MESO_EARLY", contrast) & !grepl("MESO_LATE", contrast)) %>% arrange(desc(times)) %>% mutate(contrast=gsub("MESO_EARLY", "", contrast))
@@ -230,16 +217,16 @@ thisFile <- getPermlink(repository = thisRepo,
 
 ALL_USED_IDs = c(mirna_rlog_obj$properties$id, metadata_obj@schema, mrna_logfc_obj@properties$id, mrna_pval_obj@properties$id, mirna_logfc_obj@properties$id, mirna_pval_obj@properties$id)
 
-CODE <- File(thisFileName,name = activityName,parentId = parentId)
-CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=activityName, executed=thisFile)
+CODE <- File(thisFileName,name = ActivityName,parentId = parentId)
+CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=ActivityName, executed=thisFile)
 
-  
-res <- File('../../data/miRNA-mRNA_netowrk.tsv',name = 'miRNA-mRNA network list',parentId = parentId)
+write.table(dd, "../../data/miRNA-mRNA_mixedEffect_netowrk.tsv", quote=F, sep="\t", row.names=F)
+res <- File('../../data/miRNA-mRNA_mixedEffect_netowrk.tsv',name = 'miRNA-mRNA network list',parentId = parentId)
 res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
 
 devtools::source_gist("6117476")
 knit2synapse("miRNA_mRNA_network.Rmd",
-             owner=code@properties$id,
+             owner=CODE@properties$id,
              overwrite=TRUE)
 ```
 
