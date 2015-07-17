@@ -160,11 +160,9 @@ getDifferentialExpression <- function(diffstate, DATA){
   FIT = lmFit(GENE.EXPRESSION,
               block = DATA[[diffstate]]$COVARIATES$Donor_ID,
               correlation = CORRELATION$cor)
-
   # Make contrast to check differential expression between different differentiation stages
   CONT.TO.CHECK = setdiff(colnames(DATA[[diffstate]]$COVARIATES), c('run', 'lane'))
   CONT.TO.CHECK = CONT.TO.CHECK[!!sapply(CONT.TO.CHECK, function(x, DESIGN) length(grep(x,colnames(DESIGN))), DESIGN)]
-
   if (length(CONT.TO.CHECK) == 0){
     return(list(FIT = FIT,
                 FIT.CONTRAST = c(),
@@ -172,11 +170,19 @@ getDifferentialExpression <- function(diffstate, DATA){
                 CORRELATION = CORRELATION,
                 DIFF.EXP = c()))    
   }
-
+    
   ALL.CONT = c()
   writeLines('------------------------------------------------------------------------------')
   writeLines(paste0("Covariates for this stage: ", CONT.TO.CHECK))
   writeLines('------------------------------------------------------------------------------')
+  d = as.data.frame(DATA[[diffstate]]$COVARIATES)
+  print(d)
+  formula = formula(eval(paste("~",paste(setdiff(colnames(d),c("Donor_ID", "lane")), collapse = " + "))))
+  dse = DESeqDataSetFromMatrix(DATA[[diffstate]]$PROC.COUNT,
+                               colData = d,
+                               design =  formula)
+  dse = DESeq(dse)
+  plotDispEsts(dse)
 
   for (name in CONT.TO.CHECK){
     CONT.NAMES <- colnames(DESIGN)[grep(name,colnames(DESIGN))]
@@ -324,17 +330,17 @@ CODE <- synStore(CODE, used = ALL_USED_IDs,activityName=activityName, executed=t
       
 # Store logFC
 write.table(logFC,file='../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_logFC.tsv',sep='\t',row.names=F,quote=F)
-FC_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_logFC.tsv',name = 'logFC',parentId = CODE$properties$id)
+FC_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_logFC.tsv',name = 'logFC',parentId = parentId)
 FC_OBJ <- synStore(FC_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=CODE)
     
 # Store adjusted pvalue
 write.table(adjPVal,file='../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_adjPval.tsv',sep='\t',row.names=F,quote=F)
-PVAL_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_adjPval.tsv',name = 'Adjusted Pvalue',parentId = CODE$properties$id)
+PVAL_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_adjPval.tsv',name = 'Adjusted Pvalue',parentId = parentId)
 PVAL_OBJ <- synStore(PVAL_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=CODE)
 
 # Store differentially expressed genes for comparison
 write.table(comparisonSet,file='../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_diffGenes.tsv',sep='\t',row.names=F,quote=F)
-SIG.SETS_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_diffGenes.tsv',name = 'Differentily Expressed miRNA comparison list',parentId = CODE$properties$id)
+SIG.SETS_OBJ <- File('../../data/DiffExpAnal_miRNA_mixedEffects_EachDiffState_diffGenes.tsv',name = 'Differentily Expressed miRNA comparison list',parentId = parentId)
 annotations(SIG.SETS_OBJ) <- list(Pvalue='0.05',Foldchage='1')
 SIG.SETS_OBJ <- synStore(SIG.SETS_OBJ, used = ALL_USED_IDs, activityName = activityName, executed=CODE)
 ```
