@@ -1,0 +1,136 @@
+---
+title: "miRNA-mRNA network analysis with mixed effect modilng"
+author: "Lorena Pantano"
+date: "`r date()`"
+output: html_document
+---
+
+```{r knitr,eval=F,echo=F}
+library(rmarkdown)
+library(knitrBootstrap)
+#render("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
+```
+
+
+Find miRNA-mRNA networks using limma:voom to detect DE features and miRBD v5 for miRNA-mRNA pairs.
+
+
+```{r load}
+
+library(tidyr)
+library(dplyr)
+library(knitr)
+library(synapseClient)
+library(limma)
+library(reshape2)
+library(gplots)
+library(ggplot2)
+library(RColorBrewer)
+library(NMF)
+
+synapseLogin()
+
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='', bootstrap.show.code=FALSE, echo=FALSE)
+
+mirna_pval_obj =  synGet(id="syn4596141")
+mirna_pval = read.table(mirna_pval_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
+mirna_logfc_obj =  synGet(id="syn4595547")
+mirna_logfc = read.table(mirna_logfc_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
+```
+
+```{r fn}
+.format_table = function(m_logfc, m_pval, FCl=0.5, PVl=0.05){
+    # m_logfc = .grep(m_logfc, comp)
+    # m_pval = .grep(m_pval, comp)
+    
+    m_sig = lapply(names(m_pval), function(x){
+      sig = m_pval[,x] < PVl & abs(m_logfc[,x]) > FCl
+      if (sum(sig)>0){
+        dt = data.frame(fc=m_logfc[sig, x],gene=rownames(m_logfc)[sig])
+      
+        dt$cont = x
+        dt
+      }
+    })
+    Filter(is.null, m_sig)
+    do.call(rbind, m_sig)
+}
+
+filter_deg = function(th, mirna_pval, mirna_logfc ){
+  FCl=th[1]
+  PVl=th[2]
+  dt = .format_table(mirna_logfc, mirna_pval, FCl, PVl)
+  dt$pval=PVl
+  dt$logFC=FCl
+  dt
+}
+
+```
+
+
+```{r loop}
+th = expand.grid(c(0,0.5,1,2),c(0.01,0.05,0.1))
+t = apply(th, 1,function(x) {filter_deg(x,mirna_pval, mirna_logfc)})
+
+comp = do.call(rbind, t)
+comp = left_join( comp %>% group_by(cont, pval, logFC) %>% dplyr::summarise(total=n()) %>%
+                       mutate(cutoffs=paste0("logFC:",logFC," FDR:", pval), 
+                              comparison=substr(cont, 1, 25)),
+                  comp %>% group_by(cont, pval, logFC) %>% dplyr::summarise(maxn=n()) %>% 
+                    group_by(cont) %>% dplyr::summarise(maxn=max(maxn)), by='cont' )  %>%
+       mutate(prop=total/maxn)
+
+ggplot(comp, aes(y=cutoffs, x=comparison, fill=prop)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "white", midpoint = 0.5, mid = "grey", high = "black") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+
+```{r heatmaps}
+
+metadata_id = "syn3219876"
+metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
+metadata = metadata_obj@values %>% distinct(UID)
+row.names(metadata) = metadata$UID
+
+mirna_rlog_obj =  synGet(id="syn4595556")
+rlog_Mat = read.table(mirna_rlog_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
+
+
+.grep <- function(df, comp){
+  idx = rowSums( sapply(paste0('_',comp,'_'), function(x)grepl(x, df$cont) ) ) > 0
+  df[idx,]
+}
+
+seen = c("EB", "DE", "SC", "MESO5", "MESO15", "MESO30", "ECTO")
+comp_stages = do.call(rbind, t)
+comp_stages = .grep(comp_stages, seen)
+
+.plot_heatmap = function(PVl){
+    keep_mirna = apply(th[th$Var2==PVl,], 1, function(x){
+    name = paste0(PVl,th[1])
+    k = unique( (comp_stages %>% filter(pval==x[2] & logFC==x[1]))[,"gene"])
+    aheatmap(rlog_Mat[k,], labRow = NA, labCol = NA, 
+             main = paste0("FDR:",x[2], " logFC:",x[1]), Rowv=FALSE, Colv=FALSE,
+             distfun =  "spearman", hclustfun = "ward", legend = FALSE,
+             annCol = metadata[colnames(rlog_Mat),"Diffname_short",drop=F])
+  })
+
+}
+
+par(mfrow=c(2,2))
+.plot_heatmap(0.01)  
+.plot_heatmap(0.05)  
+.plot_heatmap(0.1)  
+
+
+```
+
+```{r kegg-enrichment}
+
+```
+
