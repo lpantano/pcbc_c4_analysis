@@ -12,9 +12,6 @@ library(knitrBootstrap)
 ```
 
 
-Find miRNA-mRNA networks using limma:voom to detect DE features and miRBD v5 for miRNA-mRNA pairs.
-
-
 ```{r load}
 
 library(tidyr)
@@ -26,6 +23,7 @@ library(reshape2)
 library(gplots)
 library(ggplot2)
 library(RColorBrewer)
+library(knitr)
 library(NMF)
 
 synapseLogin()
@@ -69,8 +67,9 @@ filter_deg = function(th, mirna_pval, mirna_logfc ){
 
 ```
 
+Number of differential expressed genes with different cutoffs. Number of genes are normalized to the comparison that showed the maximum number of de-regulated genes. See table below.
 
-```{r loop}
+```{r loop, results="asis"}
 th = expand.grid(c(0,0.5,1,2),c(0.01,0.05,0.1))
 t = apply(th, 1,function(x) {filter_deg(x,mirna_pval, mirna_logfc)})
 
@@ -82,6 +81,13 @@ comp = left_join( comp %>% group_by(cont, pval, logFC) %>% dplyr::summarise(tota
                     group_by(cont) %>% dplyr::summarise(maxn=max(maxn)), by='cont' )  %>%
        mutate(prop=total/maxn)
 
+kable(comp[!duplicated(comp$cont),c("cont","maxn")])
+
+```
+
+
+```{r fig-loop, fig.width=11}
+
 ggplot(comp, aes(y=cutoffs, x=comparison, fill=prop)) +
   geom_tile() +
   scale_fill_gradient2(low = "white", midpoint = 0.5, mid = "grey", high = "black") +
@@ -89,8 +95,9 @@ ggplot(comp, aes(y=cutoffs, x=comparison, fill=prop)) +
 
 ```
 
+How the different cutoffs affect clustering. Using just the voom normalization matrix with the design that was used to do the differential expression. Distance calculated with correlation and clustering with ward method.
 
-```{r heatmaps}
+```{r heatmaps, fig.height=11, fig.width=11}
 
 metadata_id = "syn3219876"
 metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
@@ -130,7 +137,29 @@ par(mfrow=c(2,2))
 
 ```
 
-```{r kegg-enrichment}
+```{r store, echo=FALSE, eval=FALSE}
+parentId = "syn4594275"
+activityName = 'Different cutoffs for the DE'
+ALL_USED_IDs <- c(mirna_pval_obj, mirna_logfc_obj)
+
+library(rGithubClient)
+# Github link
+thisFileName = "Different_cutoffs.Rmd"
+thisRepo <- getRepo(repository = "lpantano/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='master')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+CODE <- File(thisFileName,name = activityName,parentId = parentId)
+CODE <- synStore(CODE, used = ALL_USED_IDs,activityName=activityName, executed=thisFile)
 
 ```
 
+```{r render-synapsy, eval=FALSE, echo=FALSE}
+devtools::source_gist("6117476")
+knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/Different_cutoffs.Rmd",
+             owner=CODE@properties$id,
+             overwrite=TRUE)
+```
