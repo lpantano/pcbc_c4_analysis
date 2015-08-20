@@ -111,7 +111,7 @@ format_table = function(m_logfc, m_pval, FC=2, PVAL=0.01, map=FALSE){
 comp = c("DE", "SC", "MESO5", "ECTO", "EB")
 
 mirna_tab = format_table(mirna_logfc, mirna_pval, FC=2)
-meth_tab = format_table(meth_fc, meth_pval, FC=0.5)
+meth_tab = format_table(meth_fc, meth_pval, FC=0.5, PVAL=0.05)
 mrna_tab = format_table(mrna_logfc, mrna_pval, map=TRUE)
 
 target_obj = synGet(id="syn3461627")
