@@ -55,6 +55,19 @@ metadata$Diffname_short = as.character(stages)
 mirna_rlog_obj =  synGet(id="syn4595556")
 rlog_Mat = read.table(mirna_rlog_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
 
+meth_mirna_map_id = "syn4895962"
+meth_mirna_map_obj = synGet(meth_mirna_map_id)
+meth_mirna_map = read.table(meth_mirna_map_obj@filePath, header=F, sep="\t")
+names(meth_mirna_map) = c("meth", "mirna")
+
+meth_pval_id = "syn4596513"
+meth_pval_obj = synGet(meth_pval_id)
+meth_pval = read.table(meth_pval_obj@filePath, header=TRUE, sep ="\t", row.names = 1)
+#names(meth_pval) = gsub("vs", "_vs", names(meth_pval))
+
+meth_fc_id = "syn4596511"
+meth_fc_obj = synGet(meth_fc_id)
+meth_fc = read.table(meth_fc_obj@filePath, header=TRUE, sep ="\t", row.names = 1)
 
 .grep <- function(df, comp){
   idx = rowSums( sapply(paste0('_',comp,'_'), function(x)grepl(x, names(df))) ) > 0
@@ -72,7 +85,7 @@ rlog_Mat = read.table(mirna_rlog_obj@filePath, check.names = F, header=T, row.na
 }
 
 
-format_table = function(m_logfc, m_pval, map=FALSE){
+format_table = function(m_logfc, m_pval, FC=2, PVAL=0.01, map=FALSE){
     if (map){
       m_logfc = .convert_to_ensembl(m_logfc)
       m_pval = .convert_to_ensembl(m_pval)
@@ -81,11 +94,15 @@ format_table = function(m_logfc, m_pval, map=FALSE){
     m_pval = .grep(m_pval, comp)
     
     m_sig = lapply(names(m_pval), function(x){
-      sig = m_pval[,x] < 0.01 & abs(m_logfc[,x]) > 2
-      dt = data.frame(fc=m_logfc[sig, x],gene=rownames(m_logfc)[sig])
       
-      dt$cont = x
-      dt
+      sig = m_pval[,x] < PVAL & abs(m_logfc[,x]) > FC
+      sig[is.na(sig)] = FALSE
+      if (sum(sig)>0){
+        dt = data.frame(fc=m_logfc[sig, x],gene=rownames(m_logfc)[sig])
+      
+        dt$cont = x
+        return(dt)
+      }
     })
     do.call(rbind, m_sig)
 }
@@ -93,8 +110,9 @@ format_table = function(m_logfc, m_pval, map=FALSE){
 
 comp = c("DE", "SC", "MESO5", "ECTO", "EB")
 
-mirna_tab = format_table(mirna_logfc, mirna_pval)
-mrna_tab = format_table(mrna_logfc, mrna_pval, TRUE)
+mirna_tab = format_table(mirna_logfc, mirna_pval, FC=2)
+meth_tab = format_table(meth_fc, meth_pval, FC=0.5)
+mrna_tab = format_table(mrna_logfc, mrna_pval, map=TRUE)
 
 target_obj = synGet(id="syn3461627")
 target = read.table(target_obj@filePath, check.names = F, header=F, sep="\t")
@@ -107,7 +125,7 @@ Using Adjusted pval < 0.01 and abs(logFC) > 2
 
 ```{r create-network}
 network_list = list()
-for (contrast in intersect(unique(mrna_tab$cont), unique(mrna_tab$cont)) ){
+for (contrast in intersect(unique(mrna_tab$cont), unique(mirna_tab$cont)) ){
     genes_de = mrna_tab %>% filter(cont == contrast )
     mirna_de = mirna_tab %>% filter(cont == contrast)
     target_de = target %>% filter(gene %in% genes_de$gene & mirna %in% mirna_de$gene)
@@ -121,12 +139,32 @@ for (contrast in intersect(unique(mrna_tab$cont), unique(mrna_tab$cont)) ){
     }
 }
 
+network_meth_list = list()
+for (contrast in intersect(unique(meth_tab$cont), unique(mirna_tab$cont)) ){
+    genes_de = meth_tab %>% filter(cont == contrast )
+    mirna_de = mirna_tab %>% filter(cont == contrast)
+    target_de = meth_mirna_map %>% filter(meth %in% genes_de$gene & mirna %in% mirna_de$gene)
+    idx_mirna = match(mirna_de$gene, target_de$mirna)
+    idx_mrna = match(genes_de$gene, target_de$meth)
+    target_de[idx_mirna[!is.na(idx_mirna)],"mirna_fc"] = mirna_de$fc[!is.na(idx_mirna)]
+    target_de[idx_mrna[!is.na(idx_mrna)],"meth_fc"] = genes_de$fc[!is.na(idx_mrna)]
+    network = target_de %>% filter(!is.na(mirna_fc) & !is.na(meth_fc) & mirna_fc * meth_fc < 0)
+    if (dim(network)[1]>0){
+      network_meth_list[[contrast]] = network %>% mutate(contrast = contrast)
+    }
+}
+
+
 ```
 
 ## Numbers of interaction in all comparisons
 
 ```{r summary, results='asis'}
 kable(as.data.frame(sapply(network_list, nrow)))
+```
+
+```{r summary-meth, results='asis'}
+kable(as.data.frame(sapply(network_meth_list, nrow)))
 ```
 
 ## Common interactions
@@ -174,6 +212,18 @@ V(gr)$name[grepl("ENSG",V(gr)$name)]=""
 plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,vertex.label.cex=0.8,vertex.size=5,edge.width=2,vertex.label.color="black")
 ```
 
+## methylation - miRNA - mRNA interaction
+
+nothing here, there is not interaction involving miRNA-methylation-miRNA
+
+```{r c3-network}
+meth_mirna_res = do.call(rbind,network_meth_list)
+mrna_mirna_res = do.call(rbind,network_list)
+
+c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='mirna')
+```
+
+
 ## heatmap only with DE miRNA that target DE genes
 
 ```{r heatmap}
@@ -216,7 +266,7 @@ thisRepo <- getRepo(repository = "lpantano/pcbc_c4_analysis",
 thisFile <- getPermlink(repository = thisRepo,
                         repositoryPath=paste0('code/Rmd/', thisFileName))
 
-ALL_USED_IDs = c(mirna_rlog_obj$properties$id, metadata_obj@schema, mrna_logfc_obj@properties$id, mrna_pval_obj@properties$id, mirna_logfc_obj@properties$id, mirna_pval_obj@properties$id)
+ALL_USED_IDs = c(mirna_rlog_obj$properties$id, metadata_obj@schema, mrna_logfc_obj@properties$id, mrna_pval_obj@properties$id, mirna_logfc_obj@properties$id, mirna_pval_obj@properties$id, meth_pval_id, meth_fc_id, meth_mirna_map_id)
 
 CODE <- File(thisFileName,name = ActivityName,parentId = parentId)
 CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=ActivityName, executed=thisFile)
