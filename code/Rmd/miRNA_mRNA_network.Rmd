@@ -58,6 +58,7 @@ rlog_Mat = read.table(mirna_rlog_obj@filePath, check.names = F, header=T, row.na
 meth_mirna_map_id = "syn4895962"
 meth_mirna_map_obj = synGet(meth_mirna_map_id)
 meth_mirna_map = read.table(meth_mirna_map_obj@filePath, header=F, sep="\t")
+# meth_mirna_map = read.table("../../data/hm450_gene_annotations_mapped_mirna_tss.tsv", header=F, sep="\t")
 names(meth_mirna_map) = c("meth", "mirna")
 
 meth_pval_id = "syn4596513"
@@ -110,9 +111,9 @@ format_table = function(m_logfc, m_pval, FC=2, PVAL=0.01, map=FALSE){
 
 comp = c("DE", "SC", "MESO5", "ECTO", "EB")
 
-mirna_tab = format_table(mirna_logfc, mirna_pval, FC=2)
-meth_tab = format_table(meth_fc, meth_pval, FC=0.5, PVAL=0.05)
-mrna_tab = format_table(mrna_logfc, mrna_pval, map=TRUE)
+mirna_tab = format_table(mirna_logfc, mirna_pval, FC=1)
+meth_tab = format_table(meth_fc, meth_pval, FC=0.2, PVAL=0.05)
+mrna_tab = format_table(mrna_logfc, mrna_pval, FC=1, map=TRUE)
 
 target_obj = synGet(id="syn3461627")
 target = read.table(target_obj@filePath, check.names = F, header=F, sep="\t")
@@ -179,8 +180,27 @@ dd_complete = merge(dd, dd_times, by="id") %>% dplyr::arrange(desc(times))
 ```
 
 
+```{r pheatmap}
+
+tt = apply(dd_complete, 1, function(x){
+  comp = unlist(strsplit(x[6],split = "_"))
+  #g1 = c(x[1], x[5], comp[3])
+  #g2 = c(x[1], -1 * as.numeric(x[5]), comp[5])
+  return(  data.frame(pair=c(x[1], x[1]), fc=c(x[5], -1 * as.numeric(x[5])), comp=c(comp[3], comp[5])  ))
+})
+
+tt = do.call(rbind,tt)
+
+tt$fc = as.numeric(as.character(tt$fc))
+
+tt_m = reshape(as.data.frame(tt), direction = 'wide', idvar='pair', timevar = "comp")
+tt_m[is.na(tt_m)] = 0
+pheatmap(tt_m, show_rownames = FALSE)
+```
+
+
 ```{r network-gene-mirna-meso-early, fig.width=11, fig.height=11, eval=FALSE, echo=FALSE}
-dd_reduce = merge(dd, dd_times, by="id")  %>% filter(grepl("MESO_EARLY", contrast) & !grepl("MESO_LATE", contrast)) %>% dplyr::arrange(desc(times)) %>% mutate(contrast=gsub("MESO_EARLY", "", contrast))
+dd_reduce = merge(dd, dd_times, by="id")  %>% filter(grepl("MESO5", contrast) & !grepl("MESO15", contrast)) %>% dplyr::arrange(desc(times)) %>% mutate(contrast=gsub("MESO30", "", contrast))
 con = rbind( data.frame(start=dd_reduce$mirna, end=dd_reduce$gene),
              data.frame(start=dd_reduce$contrast, end=dd_reduce$mirna ))
 con = con %>% distinct()
@@ -212,6 +232,24 @@ V(gr)$name[grepl("ENSG",V(gr)$name)]=""
 plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,vertex.label.cex=0.8,vertex.size=5,edge.width=2,vertex.label.color="black")
 ```
 
+only taking interactions that appear  > 1 times
+
+```{r network-gene-mirna-no-meso}
+dd_reduce = merge(dd, dd_times, by="id") %>% filter( times>5) %>% dplyr::arrange(desc(times))
+con = rbind( data.frame(start=dd_reduce$mirna, end=dd_reduce$gene),
+             data.frame(start=dd_reduce$contrast, end=dd_reduce$mirna ))
+con = con %>% distinct()
+suppressMessages(library(igraph))
+gr<-graph.data.frame(con, directed = F)
+V(gr)$color<-"white"
+V(gr)$color[grep("hsa-",V(gr)$name)]<-"orange"
+V(gr)$color[grep("ENSG",V(gr)$name)]<-"grey80"
+V(gr)$name[grepl("hsa",V(gr)$name)]=""
+V(gr)$name[grepl("ENSG",V(gr)$name)]=""
+plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,vertex.label.cex=0.8,vertex.size=5,edge.width=2,vertex.label.color="black")
+```
+
+
 ## methylation - miRNA - mRNA interaction
 
 nothing here, there is not interaction involving miRNA-methylation-miRNA
@@ -220,7 +258,7 @@ nothing here, there is not interaction involving miRNA-methylation-miRNA
 meth_mirna_res = do.call(rbind,network_meth_list)
 mrna_mirna_res = do.call(rbind,network_list)
 
-c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='mirna')
+c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='mirna') %>% filter(contrast.x==contrast.y)
 ```
 
 
