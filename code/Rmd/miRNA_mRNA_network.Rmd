@@ -110,9 +110,9 @@ format_table = function(m_logfc, m_pval, FC=2, PVAL=0.01, map=FALSE){
 
 comp = c("DE", "SC", "MESO5", "ECTO", "EB")
 
-mirna_tab = format_table(mirna_logfc, mirna_pval, FC=2)
-meth_tab = format_table(meth_fc, meth_pval, FC=0.5, PVAL=0.05)
-mrna_tab = format_table(mrna_logfc, mrna_pval, map=TRUE)
+mirna_tab = format_table(mirna_logfc, mirna_pval, FC=1)
+meth_tab = format_table(meth_fc, meth_pval, FC=0.2, PVAL=0.05)
+mrna_tab = format_table(mrna_logfc, mrna_pval, FC=1, map=TRUE)
 
 target_obj = synGet(id="syn3461627")
 target = read.table(target_obj@filePath, check.names = F, header=F, sep="\t")
@@ -217,10 +217,10 @@ plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,
 nothing here, there is not interaction involving miRNA-methylation-miRNA
 
 ```{r c3-network}
-meth_mirna_res = do.call(rbind,network_meth_list)
-mrna_mirna_res = do.call(rbind,network_list)
+meth_mirna_res = do.call(rbind,network_meth_list) %>% mutate(id=paste0(mirna, contrast))
+mrna_mirna_res = do.call(rbind,network_list) %>% mutate(id=paste0(mirna, contrast))
 
-c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='mirna')
+c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='id')
 ```
 
 
@@ -231,6 +231,58 @@ meta_sub = metadata[colnames(rlog_Mat),c("Diffname_short"),drop=F]
 pheatmap(rlog_Mat[as.character(unique(dd$mirna)),], clustering_distance_rows = "correlation", clustering_distance_cols = "correlation", clustering_method = "ward", annotation = meta_sub, show_rownames = F,  show_colnames = F)
 
 ```
+
+```{r summarize}
+
+single = dd_complete %>% filter(times<5 )
+
+u_pairs = unique(as.character(single$id))
+
+u_tab = lapply(u_pairs, function(p){
+  unit = single %>% filter(id==p)
+  states = as.vector(unlist(as.matrix(strsplit2(unit$contrast, split = "_"))[,c(3,5)]))
+  if (nrow(unit) == 1){
+    return(unit %>% mutate(direction=states[1]))
+  }
+  counts = table(gsub("15", "30", states))
+  common = counts[counts==nrow(unit)]
+  if (length(common) > 0){
+    return(unit %>% mutate(direction=names(common)))
+  }
+})
+
+u_tab = do.call(rbind, u_tab)
+u_tab = u_tab[order(u_tab$direction),]
+u_tab$id = factor(u_tab$id, levels = as.character(u_tab$id))
+ggplot(u_tab, aes(y=id, x=direction, fill=mrna_fc)) +
+  geom_tile()
+
+dd_reduce = merge(dd, dd_times, by="id") %>% filter( times>4) %>% dplyr::arrange(desc(times))
+
+ma_plot = dd_reduce %>% separate(contrast, c("type", "void", "g1", "vs", "g2"), sep = "_", remove=TRUE) %>%
+  dplyr::select(id, mirna, gene, mirna_fc, mrna_fc, g1, g2)
+
+suppressMessages(library(igraph))
+
+.convert_to_gene <- function(m){
+  require(biomaRt)
+  ensembl = useMart('ensembl', dataset = "hsapiens_gene_ensembl")
+  df = getBM(attributes=c("ensembl_gene_id", "external_gene_name"), filters="ensembl_gene_id", values=as.character(m), mart=ensembl)
+  return(df)
+}
+
+names = .convert_to_gene(unique(ma_plot$gene))
+for (u_id in unique(ma_plot$id)){
+  con = ma_plot %>% filter(id == u_id)
+  name_gene = names %>% filter(ensembl_gene_id==con$gene[1])
+  con[con$mrna_fc<0,c("g1","g2")] = con[con$mrna_fc<0,c("g2","g1")] 
+  gr<-graph.data.frame(con[,c("g1","g2", "mrna_fc")], directed = T)
+  V(gr)$color<-"white"
+  plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.label.cex=0.7,vertex.size=35,edge.width=5,vertex.label.color="black", main=paste(con$mirna[1], "->" ,name_gene[2]))
+}
+
+```
+
 
 
 ```{r nmf, eval=FALSE, echo=FALSE}
