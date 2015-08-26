@@ -28,6 +28,8 @@ library(ggplot2)
 library(RColorBrewer)
 library(pheatmap)
 
+options(bitmapType = 'cairo')
+
 synapseLogin()
 
 knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
@@ -251,7 +253,7 @@ plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,
 
 only taking interactions that appear  > 4 times
 
-```{r network-gene-mirna-no-meso}
+```{r network-gene-mirna-reduce}
 dd_reduce = merge(dd, dd_times, by="id") %>% filter( times>4) %>% dplyr::arrange(desc(times))
 con = rbind( data.frame(start=dd_reduce$mirna, end=dd_reduce$gene),
              data.frame(start=dd_reduce$contrast, end=dd_reduce$mirna ))
@@ -345,7 +347,7 @@ for (u_id in unique(ma_plot$id)){
 }
 par(mfrow=c(1,1))
 plot('1', type = 'n', axes = F, xlab="", ylab="")
-legend("top", fill=col_col, legend = col_breaks, box.lwd = 0, border = 0, horiz = T)
+legend("top", fill=col_col, legend = paste0(col_breaks[1:7], ", ",col_breaks[2:8]), box.lwd = 0, border = 0, horiz = T)
 ```
 
 or another way to represent where these miRNAs-mRNA appears as a heatmap
