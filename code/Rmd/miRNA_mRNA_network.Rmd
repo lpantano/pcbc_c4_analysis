@@ -122,7 +122,7 @@ names(target) = c("mirna","gene")
 
 # Detect networks
 
-Using Adjusted pval < 0.01 and abs(logFC) > 2
+For mRNA and miRNA using adjusted pval < 0.01 and abs(logFC) > 1 and for methylation, abs(logFC) > 0.2 and FDR < 0.05 to get more interactions.
 
 ```{r create-network}
 network_list = list()
@@ -155,33 +155,50 @@ for (contrast in intersect(unique(meth_tab$cont), unique(mirna_tab$cont)) ){
     }
 }
 
-
 ```
 
 ## Numbers of interaction in all comparisons
+
+For mRNA-miRNA
 
 ```{r summary, results='asis'}
 kable(as.data.frame(sapply(network_list, nrow)))
 ```
 
+For methylation-miRNA
+
 ```{r summary-meth, results='asis'}
 kable(as.data.frame(sapply(network_meth_list, nrow)))
 ```
 
-## Common interactions
+## Common interactions for mRNA-miRNA
 
 ```{r summary-unique, results='asis'}
 dd = do.call(rbind, network_list)
 dd$id = paste0(dd$mirna,"->",dd$gene)
 dd_times = dd %>% group_by(id) %>% dplyr::summarise(times = n()) %>% dplyr::arrange(desc(times))
-kable(head(merge(dd, dd_times, by="id") %>% filter(times>1) %>% dplyr::arrange(desc(times))))
 dd_complete = merge(dd, dd_times, by="id") %>% dplyr::arrange(desc(times))
+
+kable(head(merge(dd, dd_times, by="id") %>% filter(times>1) %>% dplyr::arrange(desc(times))))
+
+```
+
+## methylation - miRNA - mRNA interaction
+
+Only 2 interactions affecting methylation-miRNA-mRNA in the same comparison.
+
+```{r c3-network}
+meth_mirna_res = do.call(rbind,network_meth_list) %>% mutate(id=paste0(mirna, contrast))
+mrna_mirna_res = do.call(rbind,network_list) %>% mutate(id=paste0(mirna, contrast))
+
+c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='id')
+
+kable(c3_res)
 
 ```
 
 
-```{r pheatmap}
-
+```{r pheatmap, eval=FALSE, echo=FALSE}
 tt = apply(dd_complete, 1, function(x){
   comp = unlist(strsplit(x[6],split = "_"))
   #g1 = c(x[1], x[5], comp[3])
@@ -232,10 +249,10 @@ V(gr)$name[grepl("ENSG",V(gr)$name)]=""
 plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,vertex.label.cex=0.8,vertex.size=5,edge.width=2,vertex.label.color="black")
 ```
 
-only taking interactions that appear  > 1 times
+only taking interactions that appear  > 4 times
 
 ```{r network-gene-mirna-no-meso}
-dd_reduce = merge(dd, dd_times, by="id") %>% filter( times>5) %>% dplyr::arrange(desc(times))
+dd_reduce = merge(dd, dd_times, by="id") %>% filter( times>4) %>% dplyr::arrange(desc(times))
 con = rbind( data.frame(start=dd_reduce$mirna, end=dd_reduce$gene),
              data.frame(start=dd_reduce$contrast, end=dd_reduce$mirna ))
 con = con %>% distinct()
@@ -250,18 +267,6 @@ plot.igraph(gr, layout=layout.auto,edge.color="grey80",vertex.color=V(gr)$color,
 ```
 
 
-## methylation - miRNA - mRNA interaction
-
-nothing here, there is not interaction involving miRNA-methylation-miRNA
-
-```{r c3-network}
-meth_mirna_res = do.call(rbind,network_meth_list)
-mrna_mirna_res = do.call(rbind,network_list)
-
-c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='mirna') %>% filter(contrast.x==contrast.y)
-```
-
-
 ## heatmap only with DE miRNA that target DE genes
 
 ```{r heatmap}
@@ -270,6 +275,135 @@ pheatmap(rlog_Mat[as.character(unique(dd$mirna)),], clustering_distance_rows = "
 
 ```
 
+## Reducing interactions
+
+### specific to state
+
+interaction that appears < 5 but always is from different states to the same state
+
+```{r summarize-unique}
+
+single = dd_complete %>% filter(times<5 )
+
+u_pairs = unique(as.character(single$id))
+
+u_tab = lapply(u_pairs, function(p){
+  unit = single %>% filter(id==p)
+  states = as.vector(unlist(as.matrix(strsplit2(unit$contrast, split = "_"))[,c(3,5)]))
+  if (nrow(unit) == 1){
+    return(unit %>% mutate(direction=states[1]))
+  }
+  counts = table(gsub("15", "30", states))
+  common = counts[counts==nrow(unit)]
+  if (length(common) > 0){
+    return(unit %>% mutate(direction=names(common)))
+  }
+})
+
+u_tab = do.call(rbind, u_tab)
+u_tab = u_tab[order(u_tab$direction),]
+u_tab$id = factor(u_tab$id, levels = as.character(u_tab$id))
+
+kable(as.data.frame(table(u_tab$direction)))
+
+# ggplot(u_tab, aes(y=id, x=direction, fill=mrna_fc)) +
+#  geom_tile()
+```
+
+
+### common to state
+
+interactions that appears multiple times in many comparison. 
+
+directions in the network means direction of the FC, and color, FC value. Example: Arrow from DE to ECTO with a blue color
+mean down-regulated in ECTO.
+
+```{r summarize-common}
+ma_plot = dd_complete %>% filter(times > 4) %>% separate(contrast, c("type", "void", "g1", "vs", "g2"), sep = "_", remove=TRUE) %>%
+  dplyr::select(id, mirna, gene, mirna_fc, mrna_fc, g1, g2)
+
+suppressMessages(library(igraph))
+
+.convert_to_gene <- function(m, to_name="external_gene_name"){
+  require(biomaRt)
+  ensembl = useMart('ensembl', dataset = "hsapiens_gene_ensembl")
+  df = getBM(attributes=c("ensembl_gene_id", to_name), filters="ensembl_gene_id", values=as.character(m), mart=ensembl)
+  return(df)
+}
+names = .convert_to_gene(unique(ma_plot$gene))
+
+col_breaks = c(-10,-5, -1, -0.5, 0.5, 1, 5, 10)
+col_col = rev(colorRampPalette(c("blue","grey80","orange"))(7))
+par(mfrow=c(3,3))
+for (u_id in unique(ma_plot$id)){
+  con = ma_plot %>% filter(id == u_id)
+  name_gene = names %>% filter(ensembl_gene_id==con$gene[1])
+  # con[con$mrna_fc<0,c("g1","g2")] = con[con$mrna_fc<0,c("g2","g1")] 
+  gr<-graph.data.frame(con[,c("g2","g1", "mrna_fc")], directed = T)
+  E(gr)$color <- as.character(unlist(cut(con$mrna_fc, breaks = col_breaks, labels=col_col)))
+  plot.igraph(gr, layout=layout.auto, vertex.color="white", edge.color=E(gr)$color, vertex.frame.color=NA, vertex.label.cex=0.7, vertex.size=35,edge.width=0.8,edge.arrow.size=0.2, vertex.label.color="black", main=paste(con$mirna[1], "->" ,name_gene[2]))
+}
+par(mfrow=c(1,1))
+plot('1', type = 'n', axes = F, xlab="", ylab="")
+legend("top", fill=col_col, legend = col_breaks, box.lwd = 0, border = 0, horiz = T)
+```
+
+or another way to represent where these miRNAs-mRNA appears as a heatmap
+
+```{r table-common-pairs}
+ma_plot = dd_complete %>% filter(times>3) %>% separate(contrast, c("type", "void", "g1", "vs", "g2"), sep = "_", remove=TRUE) %>%
+  dplyr::select(id, mirna, gene, mirna_fc, mrna_fc, g1, g2)
+ma_plot_m = melt(ma_plot[,c("id", "mirna", "gene", "g1", "g2")], id.vars = c("id", "mirna", "gene"))
+ma_plot_m = ma_plot_m[!duplicated(ma_plot_m[, c("id", "value")]),]
+
+names = .convert_to_gene(unique(ma_plot$gene))
+idx = match(ma_plot_m$gene, names$ensembl_gene_id)
+ma_plot_m$gene_name = names[idx, "external_gene_name"]
+
+ggplot(ma_plot_m, aes(x=value, y=paste0(mirna,">",gene_name), fill="seen")) +
+  geom_tile() +
+  scale_fill_manual(guide=FALSE,  values = "azure3") +
+  xlab("") + ylab("")
+
+write.table(names$external_gene_name, "../../data/network_heatmap_list.csv", quote=F, sep=",", row.names=F, col.names = F)
+```
+
+
+
+```{r network-common-pairs, eval=FALSE, echo=FALSE}
+export = dd_complete[dd_complete$times>1,2:7]
+export = dd_complete[!duplicated(dd_complete$id),2:7]
+names = .convert_to_gene(export$gene)
+idx = match(names$ensembl_gene_id, export$gene)
+export[idx,"symbol"] = names[,"external_gene_name"]
+write.table(export[export$times>1,], "../../data/network_example.csv", quote=F, sep=",", row.names=F)
+write.table(export[export$times>2,"symbol"], "../../data/network_example_list.csv", quote=F, sep=",", row.names=F, col.names = F)
+
+
+library(clusterProfiler)
+
+.toname = function(x){
+   require(org.Hs.eg.db)
+    symbol = AnnotationDbi::select(org.Hs.eg.db, as.character(x), "ENTREZID", keytype="ENSEMBL")
+    symbol = symbol %>% distinct(ENTREZID)
+    symbol
+}
+
+select_prot = .toname(export$gene)
+#ego <- groupGO(gene = select_prot$ENTREZID, 
+               #organism = "human", ont = "BP", level=4)
+               #pAdjustMethod = "BH",
+               #pvalueCutoff = 0.01, qvalueCutoff = 0.05, readable = TRUE)
+
+# head(summary(ego) %>% filter(Count>5) %>% arrange(desc(Count)), 20)
+
+
+# barplot(ego, drop=T, showCategory=12)
+
+# kk <- enrichKEGG(gene = select_prot$ENTREZID, organism = "human", pvalueCutoff = 0.05, readable = TRUE)
+# head(summary(kk))
+
+```
 
 ```{r nmf, eval=FALSE, echo=FALSE}
 library(NMF)
