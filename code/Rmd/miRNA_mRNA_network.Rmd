@@ -443,9 +443,14 @@ ALL_USED_IDs = c(mirna_rlog_obj$properties$id, metadata_obj@schema, mrna_logfc_o
 CODE <- File(thisFileName,name = ActivityName,parentId = parentId)
 CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=ActivityName, executed=thisFile)
 
-write.table(dd, "../../data/miRNA-mRNA_mixedEffect_netowrk.tsv", quote=F, sep="\t", row.names=F)
+write.table(mrna_mirna_res, "../../data/miRNA-mRNA_mixedEffect_netowrk.tsv", quote=F, sep="\t", row.names=F)
 res <- File('../../data/miRNA-mRNA_mixedEffect_netowrk.tsv',name = 'miRNA-mRNA network list',parentId = parentId)
 res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
+
+write.table(meth_mirna_res, "../../data/miRNA-meth_mixedEffect_netowrk.tsv", quote=F, sep="\t", row.names=F)
+res <- File('../../data/miRNA-meth_mixedEffect_netowrk.tsv',name = 'miRNA-meth network list',parentId = parentId)
+res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
+
 
 devtools::source_gist("6117476")
 knit2synapse("miRNA_mRNA_network.Rmd",
