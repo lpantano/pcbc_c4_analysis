@@ -362,7 +362,6 @@ mrna_mirna_res$symbol = .name2symbol(mrna_mirna_res$gene, out='table')
     x$v
   }))
   colnames(.toyb_red) = .names
-  print(.names)
   .toyb_red = as.data.frame(.toyb_red)
   #.join = c(names(.sort_mirna)[.others])
   #.toyb_red$others = rowSums(.toyb[,.join])
@@ -455,7 +454,7 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   .ma = mrna_keep[.regulated, ]
   .ma_hc = hclust(as.dist(1-cor(t(.ma))^2))
   # .ma_hc = hclust(dist(mrna_keep[.regulated,], method = 'manhattan'))
-  print(pheatmap(.ma[.ma_hc$order ,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = as.data.frame(.toy_red[,.toy_hc$order]), annotation_colors = .ann_colors, scale = 'row', annotation_legend = FALSE))
+  pheatmap(.ma[.ma_hc$order ,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = as.data.frame(.toy_red[,.toy_hc$order]), annotation_colors = .ann_colors, scale = 'row', annotation_legend = FALSE)
   # pheatmap(mirna_keep[.mirna_levels,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, clustering_method = "ward")
   list(ma = .ma[.ma_hc$order ,.states_lvs], ann=as.data.frame(.toy_red[,.toy_hc$order]), col=.ann_colors, 
        used=.mirna_mrna_ma$used)
@@ -470,7 +469,7 @@ and group again together according to targets, but without removing anyone. Here
 some miRNA-gene annotation at the left since we have more genes here.
 
 ```{r plot}
-pheatmap(all_info[[1]]$ma, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = all_info[[1]]$ann, annotation_colors = all_info[[1]]$col , scale = 'row')
+# pheatmap(all_info[[1]]$ma, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = all_info[[1]]$ann, annotation_colors = all_info[[1]]$col , scale = 'row')
 
 all_ma = do.call(rbind, lapply(all_info, function(x){x$ma}))
 all_used = unique(unlist(lapply(all_info, function(x){x$used})))
