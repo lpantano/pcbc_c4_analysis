@@ -130,6 +130,9 @@ mirna_tab = format_table(mirna_logfc, mirna_pval, FC=2)
 meth_tab = format_table(meth_fc, meth_pval, FC=0.2, PVAL=0.05)
 mrna_tab = format_table(mrna_logfc, mrna_pval, FC=2, map=TRUE)
 
+meth_gene_obj = synGet(id="syn2775237")
+meth_gene = read.table(meth_gene_obj@filePath, check.names = F, header=T, sep="\t")
+
 target_obj = synGet(id="syn3461627")
 target = read.table(target_obj@filePath, check.names = F, header=F, sep="\t")
 names(target) = c("mirna","gene")
