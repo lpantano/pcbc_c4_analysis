@@ -100,6 +100,15 @@ meth_fc = read.table(meth_fc_obj@filePath, header=TRUE, sep ="\t", row.names = 1
   return(new_m)
 }
 
+.convert_to_ensembl_vector <- function(m){
+  require(biomaRt)
+  ensembl = useMart('ensembl', dataset = "hsapiens_gene_ensembl")
+  df = getBM(attributes=c("ensembl_gene_id", "external_gene_name"), filters="external_gene_name", values=as.character(m), mart=ensembl)
+  idx = match(as.character(m), df$external_gene_name)
+  names = df$ensembl_gene_id[idx]
+  names
+}
+
 
 format_table = function(m_logfc, m_pval, FC=2, PVAL=0.01, map=FALSE){
     if (map){
@@ -137,6 +146,12 @@ target_obj = synGet(id="syn3461627")
 target = read.table(target_obj@filePath, check.names = F, header=F, sep="\t")
 names(target) = c("mirna","gene")
 target = target[!duplicated(target),]
+
+
+meth_gene_obj = synGet(id="syn2775237")
+meth_gene = read.table(meth_gene_obj@filePath, check.names = F, header=T, sep=",")
+meth_gene = meth_gene[!duplicated(meth_gene),]
+meth_gene$ensembl = .convert_to_ensembl_vector(meth_gene$UCSC_RefGene_Name)
 ```
 
 # Detect networks
@@ -174,6 +189,22 @@ for (contrast in intersect(unique(meth_tab$cont), unique(mirna_tab$cont)) ){
     }
 }
 
+
+network_meth_gene_list = list()
+for (contrast in intersect(unique(meth_tab$cont), unique(mrna_tab$cont)) ){
+    meth_de = meth_tab %>% filter(cont == contrast )
+    gene_de = mrna_tab %>% filter(cont == contrast)
+    target_de = meth_gene %>% filter(Name %in% meth_de$gene & ensembl %in% gene_de$gene) %>% dplyr::select(Name, ensembl)
+    idx_gene = match(target_de$ensembl, gene_de$gene)
+    idx_meth = match(target_de$Name, meth_de$gene)
+    target_de[!is.na(idx_gene),"gene_fc"] = gene_de$fc[idx_gene[!is.na(idx_gene)]]
+    target_de[!is.na(idx_meth),"meth_fc"] = meth_de$fc[idx_meth[!is.na(idx_meth)]]
+    network = target_de %>% filter(!is.na(gene_fc) & !is.na(meth_fc) & gene_fc * meth_fc < 0)
+    if (dim(network)[1]>0){
+      network_meth_gene_list[[contrast]] = network %>% mutate(contrast = contrast)
+    }
+}
+
 ```
 
 # Numbers of interaction in all comparisons
@@ -182,6 +213,12 @@ for (contrast in intersect(unique(meth_tab$cont), unique(mirna_tab$cont)) ){
 
 ```{r summary, results='asis'}
 kable(as.data.frame(sapply(network_list, nrow)))
+```
+
+## For mRNA-meth
+
+```{r summary, results='asis'}
+kable(as.data.frame(sapply(network_meth_gene_list, nrow)))
 ```
 
 ## For methylation-miRNA
@@ -211,6 +248,7 @@ Number of genes with methylation-miRNA-mRNA interactions
 ```{r c3-network}
 meth_mirna_res = do.call(rbind,network_meth_list) %>% mutate(id=paste0(mirna,"@", contrast))
 mrna_mirna_res = do.call(rbind,network_list) %>% mutate(id=paste0(mirna, "@",contrast))
+meth_mrna_res = do.call(rbind,network_meth_gene_list) %>% mutate(id=paste0(Name,"@", contrast))
 
 c3_res = merge(mrna_mirna_res, meth_mirna_res, by ='id')
 
@@ -262,18 +300,27 @@ states = c("DE", "SC", "EB", "ECTO", "MESO5", "MESO15", "MESO30")
     .side = which(.split==state)
     if (.side==3){
       .res = mrna_mirna_res %>% filter(contrast==comp & mrna_fc < 0)
+      .res_meth = meth_mrna_res %>% filter(contrast==comp & gene_fc < 0 & meth_fc > 0)
     }else{
       .res = mrna_mirna_res %>% filter(contrast==comp & mrna_fc > 0)
+      .res_meth = meth_mrna_res %>% filter(contrast==comp & gene_fc > 0 & meth_fc < 0)
     }
-    return(.res$gene)
+    return(list(mirna=as.character(.res$gene), meth=as.character(.res_meth$ensembl)))
+    # return(list(mirna=as.character(.res$gene), meth=c()))
   })
   
   
-  .genes = unique(unlist(.genes))
-  .mirna = mrna_mirna_res %>% filter(grepl(state,contrast) & gene %in% .genes) %>% 
+  
+  .genes_mirna = unique(unlist(sapply(.genes, function(x){x$mirna})))
+  .genes_meth = unique(unlist(sapply(.genes, function(x){x$meth})))
+  .all = unique(c(.genes_mirna, .genes_meth))
+  .mirna = mrna_mirna_res %>% filter(grepl(state,contrast) & gene %in% .all) %>% 
     distinct(gene,mirna) %>% group_by(mirna) %>% summarise(times=n()) %>% arrange(desc(times))
-  .entrez = .name2entrez(.genes)
-  return(list(entrez=.entrez, ensembl=.genes, mirna=.mirna))  
+  .meth = meth_mrna_res %>% filter(grepl(state,contrast) & ensembl %in% .all) %>% 
+    distinct(ensembl,Name) 
+  
+  .entrez = .name2entrez(.all)
+  return(list(entrez=.entrez, ensembl=.all, mirna=.mirna, meth=.meth, genes_mirna=.genes_mirna))  
 
 })
 
@@ -294,11 +341,12 @@ names(.list) = states
 }
 
 mrna_mirna_res$symbol = .name2symbol(mrna_mirna_res$gene, out='table')
+meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
 
 # .up_genes = as.character(unlist(unique(lapply(.list, function(x){x$ensembl}))))
 ```
 
-```{r reduce}
+```{r reduce-fn}
 # this_state = 'MESO15'
 .top_mirna = unique(as.character(unlist(lapply(states, function(state){
     unlist(.list[[state]]$mirna[1:5,"mirna"])
@@ -338,7 +386,6 @@ mrna_mirna_res$symbol = .name2symbol(mrna_mirna_res$gene, out='table')
       .seen = c(.seen , nc1)
     }
   }
-  
   .toyb <- matrix(ncol=ncol(.toy), nrow=nrow(.toy))
   rownames(.toyb)= rownames(.toy)
   colnames(.toyb)= colnames(.toy)
@@ -347,14 +394,14 @@ mrna_mirna_res$symbol = .name2symbol(mrna_mirna_res$gene, out='table')
   .toyb_red = lapply(1:length(.sort_mirna), function(x){
     if ( ! is.null(.pairs[[x]]) ){
       .join = unique(c(names(.sort_mirna)[x],names(.sort_mirna)[.pairs[[x]]]))
-      .name = gsub("hsa-miR-", "", paste0(.join, collapse = ","))
+      .name = gsub('hsa-', '', gsub("miR-", "", paste0(.join, collapse = ",")))
       .news = rowSums(.toyb[,.join, drop=F])
       .news[.news>0] = 1
       if ( sum(.news) >= nrow(.toyb) * min_total)
         return(list(v=.news, n=.name, real=.join))
     }
   })
-  
+
   .used = unique(unlist(lapply(.toyb_red, function(x){
     x$real
   })))
@@ -368,16 +415,26 @@ mrna_mirna_res$symbol = .name2symbol(mrna_mirna_res$gene, out='table')
   .toyb_red = as.data.frame(.toyb_red)
   #.join = c(names(.sort_mirna)[.others])
   #.toyb_red$others = rowSums(.toyb[,.join])
-  .toy_hc = hclust(dist(t(.toyb_red), method='binary'))
   
+  .toy_hc = rownames(.toyb_red)
+  if (ncol(.toyb_red) > 1){
+    cat("columns", ncol(.toyb_red))
+    .toy_hc = hclust(dist(t(.toyb_red), method='binary'))
+  }
+  
+
   .toy_red = .toyb_red
+  
   .toy_red[.toyb_red==0] = "None"
   .toy_red[.toyb_red!=0] = "Target"
-  .ann_colors = lapply(colnames(.toy_red), function(x) {c(None="white", Target="black")})
+  
+  .ann_colors = lapply(colnames(.toy_red), function(x) {c(None="azure", Target="grey")})
   names(.ann_colors) = colnames(.toy_red)
   return(list(bin=.toyb_red, cat=.toy_red, cols=.ann_colors, hc=.toy_hc, used =.used))
 }
+```
 
+```{r reduce}
 all_tab_mrna = data.frame()
 all_tab_ann = data.frame()
 .states_lvs = factor(states, levels = c("SC", "DE", "MESO5",  "ECTO", "EB","MESO15", "MESO30"))
@@ -386,13 +443,17 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   print(this_state)
   .top_mirna = as.character(unique(unlist(.list[[this_state]]$mirna[1:10,"mirna"])))
   .down_genes = as.character(unique(unlist(.list[[this_state]]$ensembl)))
-  .all_genes = (mrna_mirna_res %>% filter(!grepl(this_state, contrast)))[,"gene"]
-  .down_uni = setdiff(.down_genes, .all_genes)
+  .all_genes_mi = (mrna_mirna_res %>% filter(!grepl(this_state, contrast)))[,"gene"]
+  .all_genes_meth = (meth_mrna_res %>% filter(!grepl(this_state, contrast)))[,"ensembl"]
+  # .all_genes = as.character(unique(c(.all_genes_mi, .all_genes_meth)))
+  .down_uni = setdiff(setdiff(.down_genes, .all_genes_mi), .all_genes_meth)
   
-  .filtered = mrna_mirna_res %>% filter(mirna %in% .top_mirna & gene %in% .down_uni) %>% filter(!is.na(symbol))
-  .mrna_exp = rlog_mrna[as.character(unique(.filtered$symbol)),]
-  .mirna_exp = rlog_Mat[as.character(unique(.filtered$mirna)),]
+  .filtered_mi = mrna_mirna_res %>% filter(mirna %in% .top_mirna & gene %in% .down_uni & grepl(this_state, contrast)) %>% filter(!is.na(symbol))
+  .filtered = .name2symbol(.down_uni)
   
+  .mrna_exp = rlog_mrna[as.character(unique(.filtered)),]
+  .mirna_exp = rlog_Mat[as.character(unique(.filtered_mi$mirna)),]
+  .mirna_genes = as.character(unique(.filtered_mi$symbol))
   
   .median_by_group = function(mat, meta){
     meta = meta[colnames(mat),]
@@ -428,39 +489,61 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   }
   
   
-  .mirna_hc = .hc(mirna_keep)
-  .mirna_levels = .mirna_hc$labels[.mirna_hc$order]
+  # .mirna_hc = .hc(mirna_keep)
+  # .mirna_levels = .mirna_hc$labels[.mirna_hc$order]
   # .plot_heatmap(mirna_keep, .mirna_levels)
   
   # .mrna_hc = .hc(mrna_keep)
   # .mrna_levels = .mrna_hc$labels[.mrna_hc$order]
   # .plot_heatmap(mrna_keep, .mrna_levels)
-  .toy = matrix(ncol=nrow(.mirna_exp), nrow=nrow(.mrna_exp))
-  rownames(.toy)= rownames(.mrna_exp)
+  .toy = matrix(ncol=nrow(.mirna_exp), nrow=length(.mirna_genes))
+  rownames(.toy)= .mirna_genes
   colnames(.toy)= rownames(.mirna_exp)
   .toy[is.na(.toy)] = "None"
-  .void = apply(.filtered, 1, function(x){
+  .void = apply(.filtered_mi, 1, function(x){
     x = as.character(x)
     if ( sum(x[7]==rownames(.toy))>0 & sum(x[1]==colnames(.toy))>0 )
       .toy[x[7], x[1]] <<- "Target"
   })
   
-
-  .mirna_mrna_ma = .get_mirna_mrna_ma(.toy)  
+  print(colSums(.toy=="Target")/nrow(.toy))
+  .mirna_mrna_ma = .get_mirna_mrna_ma(.toy,min_total = 0.1)  
   .toyb_red = .mirna_mrna_ma$bin
   .toy_red = .mirna_mrna_ma$cat
   .ann_colors = .mirna_mrna_ma$cols
   .toy_hc = .mirna_mrna_ma$hc
+  .ann_df=as.data.frame(.toy_red[,.toy_hc$order])
   # pheatmap(mrna_keep[.mrna_levels,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, clustering_method = "ward")
   # pheatmap(mrna_keep[.mrna_levels,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, clustering_method = "ward", scale='row')
-  .regulated = rownames(.toyb_red)[rowSums(.toyb_red)>0]
+  idx = match(.list[[this_state]]$ensembl, meth_mrna_res$ensembl)
+  .meth = meth_mrna_res$symbol[idx[!is.na(idx)]]
+  .in_meth = rownames(mrna_keep)[rownames(mrna_keep) %in% .meth]
+  .regulated = intersect(rownames(.toyb_red)[rowSums(.toyb_red)>0], rownames(mrna_keep))
   .ma = mrna_keep[.regulated, ]
   .ma_hc = hclust(as.dist(1-cor(t(.ma))^2))
-  # .ma_hc = hclust(dist(mrna_keep[.regulated,], method = 'manhattan'))
-  pheatmap(.ma[.ma_hc$order ,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = as.data.frame(.toy_red[,.toy_hc$order]), annotation_colors = .ann_colors, scale = 'row', annotation_legend = FALSE)
+  
+  .regulated_meth = intersect(.in_meth, rownames(mrna_keep))
+  .all_ann = rbind(.ann_df[.regulated,], .ann_df[.regulated_meth,])
+  
+  if (length(.regulated_meth) > 0){
+    print(.regulated_meth)
+    .ma_meth = mrna_keep[.regulated_meth, ]
+    .ma_hc_meth = hclust(as.dist(1-cor(t(.ma_meth))^2))
+    .all_ma = rbind(.ma[.ma_hc$order ,.states_lvs], .ma_meth[.ma_hc_meth$order ,.states_lvs])
+  }else{
+    .all_ma = .ma[.ma_hc$order ,.states_lvs]
+  }
+  
+  .unkown = nrow(mrna_keep) - nrow(.all_ma)
+  
+  .all_ann[.in_meth, "methylated"] = "Target"
+  .ann_colors[['methylated']] = c(None="white", Target="grey")
+  
+
+  pheatmap(.all_ma, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = .all_ann, annotation_colors = .ann_colors, scale = 'row', annotation_legend = FALSE)
   # pheatmap(mirna_keep[.mirna_levels,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, clustering_method = "ward")
-  list(ma = .ma[.ma_hc$order ,.states_lvs], ann=as.data.frame(.toy_red[,.toy_hc$order]), col=.ann_colors, 
-       used=.mirna_mrna_ma$used)
+  list(ma = .all_ma, ann=.all_ann, col=.ann_colors, 
+       used=.mirna_mrna_ma$used, meth_used = .regulated_meth, not_explained=.unkown)
 })
 ```
 
@@ -472,7 +555,6 @@ and group again together according to targets, but without removing anyone. Here
 some miRNA-gene annotation at the left since we have more genes here.
 
 ```{r plot}
-# pheatmap(all_info[[1]]$ma, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = all_info[[1]]$ann, annotation_colors = all_info[[1]]$col , scale = 'row')
 
 all_ma = do.call(rbind, lapply(all_info, function(x){x$ma}))
 all_used = unique(unlist(lapply(all_info, function(x){x$used})))
@@ -495,8 +577,49 @@ colnames(.toy)= all_used
 .ann_colors = .mirna_mrna_ma$cols
 .toy_hc = .mirna_mrna_ma$hc
 
-pheatmap(all_ma, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE, scale='row', annotation_legend = FALSE,
-         annotation_row = as.data.frame(.toy_red[,.toy_hc$order]), annotation_colors = .ann_colors)
+.ann_df = as.data.frame(.toy_red[,.toy_hc$order])
+all_meth = do.call(rbind, lapply(all_info, function(x){x$ann[,"methylated", drop=FALSE]}))
+.ann_df$methylated = "None"
+.ann_df[row.names(all_meth)[!is.na(all_meth$methylated)], "methylated"] = "Target"
+#cbind(.ann_df, all_meth[rownames(.ann_df),])
+# .all_ann[.in_meth, "methylated"] = "None"
+# .all_ann[, "methylated"] = "Target"
+.ann_colors[['methylated']] = c(None="white", Target="black")
+ 
+.void = lapply(all_info, function(x){
+  .m = x$used
+  .m = gsub("miR-","",gsub("hsa-","",.m))
+  .all = unlist(sapply(names(.ann_df), function(x){unlist(strsplit2(x,","))}))
+  idx = match(.m, .all)
+  .seen = names(.all[idx])
+  .seen = unique(sapply(.seen,function(x){
+    if (grepl("-",x))
+      x = gsub("[0-9]$","",x)
+    x
+    }))
+
+  for (.m in unique(.seen)){
+    # print(.m)
+    # print(table(.ann_df[rownames(x$ma),.m]))
+    .ma = .ann_df[rownames(x$ma),.m] == "Target"
+    # print(sum(.ma))
+    if (sum(.ma)>0)
+      .ann_df[rownames(x$ma),.m][.ma] <<- "Detected"
+  }
+    
+})
+
+.ann_colors = lapply(.ann_colors,function(x){
+  c(x,Detected="black")
+})
+
+gaps = cumsum(sapply(all_info, function(x){nrow(x$ma)}))
+cols = colorRampPalette(rev(c("red","orange","blue")))(100)
+pheatmap(all_ma, color = cols, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE, scale='row', annotation_legend = FALSE, annotation_row = .ann_df, annotation_colors = .ann_colors, gaps_row=gaps)
+
+sapply(all_info,function(x){
+  x$not_explained/(nrow(x$ma)+x$not_explained)
+})
 
 ```
 
