@@ -300,19 +300,22 @@ states = c("DE", "SC", "EB", "ECTO", "MESO5", "MESO15", "MESO30")
     .side = which(.split==state)
     if (.side==3){
       .res = mrna_mirna_res %>% filter(contrast==comp & mrna_fc < 0)
-      .res_meth = meth_mrna_res %>% filter(contrast==comp & gene_fc < 0 & meth_fc > 0)
+      .res_meth = meth_mrna_res %>% filter(contrast==comp & gene_fc < 0 )
     }else{
       .res = mrna_mirna_res %>% filter(contrast==comp & mrna_fc > 0)
-      .res_meth = meth_mrna_res %>% filter(contrast==comp & gene_fc > 0 & meth_fc < 0)
+      .res_meth = meth_mrna_res %>% filter(contrast==comp & gene_fc > 0 )
     }
-    return(list(mirna=as.character(.res$gene), meth=as.character(.res_meth$ensembl)))
+    return(list(mirna=unique(as.character(.res$gene)), meth=as.character(.res_meth$ensembl)))
     # return(list(mirna=as.character(.res$gene), meth=c()))
   })
   
   
+  .genes_mirna_counts = data.frame(genes=unlist(sapply(.genes, function(x){x$mirna}))) %>% group_by(genes) %>% summarise(total=n())
+  .genes_meth_counts = data.frame(genes=unlist(sapply(.genes, function(x){x$meth}))) %>% group_by(genes) %>% summarise(total=n())
   
-  .genes_mirna = unique(unlist(sapply(.genes, function(x){x$mirna})))
-  .genes_meth = unique(unlist(sapply(.genes, function(x){x$meth})))
+  # print(.genes_mirna_counts)
+  .genes_mirna = as.character(.genes_mirna_counts$genes)
+  .genes_meth = as.character(.genes_meth_counts$genes)
   .all = unique(c(.genes_mirna, .genes_meth))
   .mirna = mrna_mirna_res %>% filter(grepl(state,contrast) & gene %in% .all) %>% 
     distinct(gene,mirna) %>% group_by(mirna) %>% summarise(times=n()) %>% arrange(desc(times))
@@ -320,7 +323,7 @@ states = c("DE", "SC", "EB", "ECTO", "MESO5", "MESO15", "MESO30")
     distinct(ensembl,Name) 
   
   .entrez = .name2entrez(.all)
-  return(list(entrez=.entrez, ensembl=.all, mirna=.mirna, meth=.meth, genes_mirna=.genes_mirna))  
+  return(list(entrez=.entrez, ensembl=.all, mirna=.mirna, meth=.meth, genes_mirna=.genes_mirna, genes_mirna_counts=.genes_mirna_counts, genes_meth_counts=.genes_meth_counts))  
 
 })
 
@@ -355,15 +358,15 @@ meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
 
 .get_mirna_mrna_ma = function(.toy, min_total=0.1){
   .seen = vector()
-  .sort_mirna = sort(colSums(.toy=="Target"), decreasing = T)
+  .sort_mirna = sort(colSums(.toy>0), decreasing = T)
   .pairs = vector("list", length=length(.sort_mirna))
   for (nc1 in 1:length(.sort_mirna)){
     for (nc2 in 1:length(.sort_mirna)){
       if (nc1 != nc2 & sum(.seen==nc2)==0){
         .name1 = names(.sort_mirna)[nc1]
         .name2 = names(.sort_mirna)[nc2]
-        .these1 = rownames(.toy)[.toy[,.name1]=="Target"]
-        .these2 = rownames(.toy)[.toy[,.name2]=="Target"]
+        .these1 = rownames(.toy)[.toy[,.name1]>0]
+        .these2 = rownames(.toy)[.toy[,.name2]>0]
         .min = min(length(.these1), length(.these2))
         .common = length(intersect(.these1, .these2))
         if ( (.common / .min) > 0.50 ){
@@ -377,7 +380,7 @@ meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
   .others = c()
   for (nc1 in 1:length(.sort_mirna)){
     if (sum(.seen==nc1)==0 ){
-      .these1 = rownames(.toy)[.toy[,nc1]=="Target"]
+      .these1 = rownames(.toy)[.toy[,nc1]>0]
       if ( length(.these1) / nrow(.toy) >= min_total ){
         .pairs[[nc1]] = c(.pairs[[nc1]], nc1)
       }#else{
@@ -386,17 +389,15 @@ meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
       .seen = c(.seen , nc1)
     }
   }
-  .toyb <- matrix(ncol=ncol(.toy), nrow=nrow(.toy))
-  rownames(.toyb)= rownames(.toy)
-  colnames(.toyb)= colnames(.toy)
-  .toyb[.toy=="None"] = 0
-  .toyb[.toy!="None"] = 1
+  .toyb <- .toy
+  # .toyb[.toy=="None"] = 0
+  # .toyb[.toy > 0] = 1
   .toyb_red = lapply(1:length(.sort_mirna), function(x){
     if ( ! is.null(.pairs[[x]]) ){
       .join = unique(c(names(.sort_mirna)[x],names(.sort_mirna)[.pairs[[x]]]))
       .name = gsub('hsa-', '', gsub("miR-", "", paste0(.join, collapse = ",")))
       .news = rowSums(.toyb[,.join, drop=F])
-      .news[.news>0] = 1
+      # .news[.news>0] = 1
       if ( sum(.news) >= nrow(.toyb) * min_total)
         return(list(v=.news, n=.name, real=.join))
     }
@@ -424,7 +425,6 @@ meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
   
 
   .toy_red = .toyb_red
-  
   .toy_red[.toyb_red==0] = "None"
   .toy_red[.toyb_red!=0] = "Target"
   
@@ -499,34 +499,40 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   .toy = matrix(ncol=nrow(.mirna_exp), nrow=length(.mirna_genes))
   rownames(.toy)= .mirna_genes
   colnames(.toy)= rownames(.mirna_exp)
-  .toy[is.na(.toy)] = "None"
+  .toy[is.na(.toy)] = 0
   .void = apply(.filtered_mi, 1, function(x){
     x = as.character(x)
     if ( sum(x[7]==rownames(.toy))>0 & sum(x[1]==colnames(.toy))>0 )
-      .toy[x[7], x[1]] <<- "Target"
+      .toy[x[7], x[1]] <<- .toy[x[7], x[1]] + 1
   })
   
-  print(colSums(.toy=="Target")/nrow(.toy))
+  print(colSums(.toy==1)/nrow(.toy))
   .mirna_mrna_ma = .get_mirna_mrna_ma(.toy,min_total = 0.1)  
   .toyb_red = .mirna_mrna_ma$bin
   .toy_red = .mirna_mrna_ma$cat
   .ann_colors = .mirna_mrna_ma$cols
   .toy_hc = .mirna_mrna_ma$hc
+  
+  # tt = .list[[this_state]]$genes_mirna_counts
+  # tt$symbol = .name2symbol(tt$genes, out='table')
+  # .toyb_red_norm = sweep(.toyb_red, 1, unlist(tt[match(rownames(.toyb_red), tt$symbol),"total"]), "/")
   .ann_df=as.data.frame(.toy_red[,.toy_hc$order])
-  # pheatmap(mrna_keep[.mrna_levels,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, clustering_method = "ward")
-  # pheatmap(mrna_keep[.mrna_levels,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, clustering_method = "ward", scale='row')
+
+  .regulated = intersect(rownames(.toyb_red)[rowSums(.toyb_red)>0], rownames(mrna_keep))
+  
   idx = match(.list[[this_state]]$ensembl, meth_mrna_res$ensembl)
   .meth = meth_mrna_res$symbol[idx[!is.na(idx)]]
   .in_meth = rownames(mrna_keep)[rownames(mrna_keep) %in% .meth]
-  .regulated = intersect(rownames(.toyb_red)[rowSums(.toyb_red)>0], rownames(mrna_keep))
+  # .regulated_meth = setdiff(intersect(.in_meth, rownames(mrna_keep)), .regulated)
+  .regulated_meth = intersect(.in_meth, rownames(mrna_keep))
+  .regulated = setdiff(.regulated, .regulated_meth)
   .ma = mrna_keep[.regulated, ]
   .ma_hc = hclust(as.dist(1-cor(t(.ma))^2))
   
-  .regulated_meth = intersect(.in_meth, rownames(mrna_keep))
   .all_ann = rbind(.ann_df[.regulated,], .ann_df[.regulated_meth,])
   
   if (length(.regulated_meth) > 0){
-    print(.regulated_meth)
+    # print(.regulated_meth)
     .ma_meth = mrna_keep[.regulated_meth, ]
     .ma_hc_meth = hclust(as.dist(1-cor(t(.ma_meth))^2))
     .all_ma = rbind(.ma[.ma_hc$order ,.states_lvs], .ma_meth[.ma_hc_meth$order ,.states_lvs])
@@ -539,12 +545,20 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   .all_ann[.in_meth, "methylated"] = "Target"
   .ann_colors[['methylated']] = c(None="white", Target="grey")
   
-
   pheatmap(.all_ma, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE,annotation_row = .all_ann, annotation_colors = .ann_colors, scale = 'row', annotation_legend = FALSE)
   # pheatmap(mirna_keep[.mirna_levels,.states_lvs], show_rownames = FALSE, cluster_cols = FALSE, clustering_method = "ward")
   list(ma = .all_ma, ann=.all_ann, col=.ann_colors, 
        used=.mirna_mrna_ma$used, meth_used = .regulated_meth, not_explained=.unkown)
 })
+```
+
+
+```{r}
+  .ann_colors_b = lapply(colnames(.ann_df), function(x) {c("azure", "grey")})
+  names(.ann_colors_b) = colnames(.ann_df)
+  
+  .ann_colors_b[['methylated']] = c(None="white", Target="grey")
+
 ```
 
 ## All together
@@ -563,11 +577,11 @@ all_used = unique(unlist(lapply(all_info, function(x){x$used})))
 .toy = matrix(ncol=length(all_used), nrow=nrow(all_ma))
 rownames(.toy)= rownames(all_ma)
 colnames(.toy)= all_used
-.toy[is.na(.toy)] = "None"
+.toy[is.na(.toy)] = 0
 .void = apply(.filtered, 1, function(x){
   x = as.character(x)
   if ( sum(x[7]==rownames(.toy))>0 & sum(x[1]==colnames(.toy))>0 )
-    .toy[x[7], x[1]] <<- "Target"
+    .toy[x[7], x[1]] <<- .toy[x[7], x[1]] + 1
 })
 
 
