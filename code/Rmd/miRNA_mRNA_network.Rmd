@@ -8,7 +8,7 @@ output: html_document
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
 library(knitrBootstrap)
-#render("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
+render("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
 
 
@@ -217,7 +217,7 @@ kable(as.data.frame(sapply(network_list, nrow)))
 
 ## For mRNA-meth
 
-```{r summary, results='asis'}
+```{r summary-mrna-meth, results='asis'}
 kable(as.data.frame(sapply(network_meth_gene_list, nrow)))
 ```
 
@@ -553,14 +553,6 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
 ```
 
 
-```{r}
-  .ann_colors_b = lapply(colnames(.ann_df), function(x) {c("azure", "grey")})
-  names(.ann_colors_b) = colnames(.ann_df)
-  
-  .ann_colors_b[['methylated']] = c(None="white", Target="grey")
-
-```
-
 ## All together
 
 basically took all previous heatmaps and paste one after another. 
@@ -588,22 +580,22 @@ colnames(.toy)= all_used
 .mirna_mrna_ma = .get_mirna_mrna_ma(.toy, min_total = 0)  
 .toyb_red = .mirna_mrna_ma$bin
 .toy_red = .mirna_mrna_ma$cat
-.ann_colors = .mirna_mrna_ma$cols
+ann_colors = .mirna_mrna_ma$cols
 .toy_hc = .mirna_mrna_ma$hc
 
-.ann_df = as.data.frame(.toy_red[,.toy_hc$order])
-all_meth = do.call(rbind, lapply(all_info, function(x){x$ann[,"methylated", drop=FALSE]}))
-.ann_df$methylated = "None"
-.ann_df[row.names(all_meth)[!is.na(all_meth$methylated)], "methylated"] = "Target"
+ann_df = as.data.frame(.toy_red[,.toy_hc$order])
+.all_meth = do.call(rbind, lapply(all_info, function(x){x$ann[,"methylated", drop=FALSE]}))
+ann_df$methylated = "None"
+ann_df[row.names(.all_meth)[!is.na(.all_meth$methylated)], "methylated"] = "Target"
 #cbind(.ann_df, all_meth[rownames(.ann_df),])
 # .all_ann[.in_meth, "methylated"] = "None"
 # .all_ann[, "methylated"] = "Target"
-.ann_colors[['methylated']] = c(None="white", Target="black")
+ann_colors[['methylated']] = c(None="white", Target="black")
  
 .void = lapply(all_info, function(x){
   .m = x$used
   .m = gsub("miR-","",gsub("hsa-","",.m))
-  .all = unlist(sapply(names(.ann_df), function(x){unlist(strsplit2(x,","))}))
+  .all = unlist(sapply(names(ann_df), function(x){unlist(strsplit2(x,","))}))
   idx = match(.m, .all)
   .seen = names(.all[idx])
   .seen = unique(sapply(.seen,function(x){
@@ -615,21 +607,21 @@ all_meth = do.call(rbind, lapply(all_info, function(x){x$ann[,"methylated", drop
   for (.m in unique(.seen)){
     # print(.m)
     # print(table(.ann_df[rownames(x$ma),.m]))
-    .ma = .ann_df[rownames(x$ma),.m] == "Target"
+    .ma = ann_df[rownames(x$ma),.m] == "Target"
     # print(sum(.ma))
     if (sum(.ma)>0)
-      .ann_df[rownames(x$ma),.m][.ma] <<- "Detected"
+      ann_df[rownames(x$ma),.m][.ma] <<- "Top10"
   }
     
 })
 
-.ann_colors = lapply(.ann_colors,function(x){
-  c(x,Detected="black")
+ann_colors = lapply(ann_colors,function(x){
+  c(x, Top10="black")
 })
 
 gaps = cumsum(sapply(all_info, function(x){nrow(x$ma)}))
 cols = colorRampPalette(rev(c("red","orange","blue")))(100)
-pheatmap(all_ma, color = cols, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE, scale='row', annotation_legend = FALSE, annotation_row = .ann_df, annotation_colors = .ann_colors, gaps_row=gaps)
+pheatmap(all_ma, color = cols, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE, scale='row', annotation_legend = FALSE, annotation_row = ann_df, annotation_colors = ann_colors, gaps_row=gaps)
 
 sapply(all_info,function(x){
   x$not_explained/(nrow(x$ma)+x$not_explained)
@@ -896,6 +888,14 @@ res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CO
 
 write.table(meth_mirna_res, "../../data/miRNA-meth_mixedEffect_netowrk.tsv", quote=F, sep="\t", row.names=F)
 res <- File('../../data/miRNA-meth_mixedEffect_netowrk.tsv',name = 'miRNA-meth network list',parentId = parentId)
+res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
+
+write.table(all_ma, "../../data/miRNA-mRNA_mixedEffect_median_exp_by_group.tsv", quote=F, sep="\t", row.names=F)
+res <- File('../../data/miRNA-mRNA_mixedEffect_median_exp_by_group.tsv',name = 'gene median expression by stage',parentId = parentId)
+res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
+
+write.table(mrna_mirna_res, "../../data/miRNA-mRNA_mixedEffect_gene_annotation.tsv", quote=F, sep="\t", row.names=F)
+res <- File('../../data/miRNA-mRNA_mixedEffect_gene_annotation.tsv',name = 'gene annotation by methylation and miRNAs',parentId = parentId)
 res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
 
 
