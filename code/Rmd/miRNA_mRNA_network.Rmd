@@ -55,7 +55,7 @@ stages =  gsub("-", "", metadata$Diffname_short)
 metadata$Diffname_short = as.character(stages)
 
 
-mirna_rlog_obj =  synGet(id="syn4595556")
+mirna_rlog_obj =  synGet(id="syn4595977")
 rlog_Mat = read.table(mirna_rlog_obj@filePath, check.names = F, header=T, row.names=1, sep="\t")
 
 
@@ -310,8 +310,8 @@ states = c("DE", "SC", "EB", "ECTO", "MESO5", "MESO15", "MESO30")
   })
   
   
-  .genes_mirna_counts = data.frame(genes=unlist(sapply(.genes, function(x){x$mirna}))) %>% group_by(genes) %>% summarise(total=n())
-  .genes_meth_counts = data.frame(genes=unlist(sapply(.genes, function(x){x$meth}))) %>% group_by(genes) %>% summarise(total=n())
+  .genes_mirna_counts = data.frame(genes=unlist(sapply(.genes, function(x){x$mirna}))) %>% group_by(genes) %>% summarise(total=n()) %>% filter(total>0)
+  .genes_meth_counts = data.frame(genes=unlist(sapply(.genes, function(x){x$meth}))) %>% group_by(genes) %>% summarise(total=n()) %>% filter(total>0) # remove 3 to 0 to create 1 version
   
   # print(.genes_mirna_counts)
   .genes_mirna = as.character(.genes_mirna_counts$genes)
@@ -620,12 +620,54 @@ ann_colors = lapply(ann_colors,function(x){
 })
 
 gaps = cumsum(sapply(all_info, function(x){nrow(x$ma)}))
-cols = colorRampPalette(rev(c("red","orange","blue")))(100)
+cols = colorRampPalette(rev(c("darkorange3","lightyellow","deepskyblue4")))(100)
 pheatmap(all_ma, color = cols, show_rownames = FALSE, cluster_cols = FALSE, cluster_rows = FALSE, scale='row', annotation_legend = FALSE, annotation_row = ann_df, annotation_colors = ann_colors, gaps_row=gaps)
 
 sapply(all_info,function(x){
   x$not_explained/(nrow(x$ma)+x$not_explained)
 })
+
+```
+
+
+```{r mirna_heatmap}
+
+mirna_exp = lapply(names(ann_df), function(x){
+  .m = gsub("miR-","",gsub("hsa-","",rownames(rlog_Mat)))
+  .all = unlist(sapply(x, function(x){unlist(strsplit2(x,","))}))
+
+  idx = match(.all, .m)
+  # print(idx)
+  if (x != "methylated"){
+    .exp = sapply(as.character(levels(.states_lvs)), function(this_state){
+      # print(this_state) 
+      median(rowMedians(as.matrix(rlog_Mat[idx, metadata[metadata$UID %in% names(rlog_Mat) & metadata$Diffname_short==this_state, "UID"], drop=FALSE])))
+     })
+    return(.exp)
+  }
+})
+
+mirna_exp = matrix(unlist(mirna_exp), ncol=7, byrow = TRUE)
+colnames(mirna_exp) = levels(.states_lvs)
+rownames(mirna_exp) = names(ann_df)[1:27]
+
+.ma = apply(mirna_exp,1,scale)
+rownames(.ma) = colnames(mirna_exp)
+.ma = as.data.frame(.ma[rev(levels(.states_lvs)), rev(rownames(mirna_exp))])
+
+
+pheatmap(.ma, color = cols, show_colnames = TRUE, cluster_cols = FALSE, cluster_rows = FALSE, scale='none', annotation_legend = FALSE)
+
+.ma_melt =  melt(.ma %>% mutate(state=rownames(.ma)))
+.ma_melt$state = factor(.ma_melt$state, levels(.states_lvs))
+.ma_melt$variable = factor(.ma_melt$variable, colnames(.ma))
+
+mirna_map = ggplot(.ma_melt, aes(x=variable, y=state, fill=value)) +
+  geom_tile() + 
+  scale_fill_gradient2(guide=FALSE, low="darkorange3", high="deepskyblue4", mid = "lightyellow", midpoint = 0) +
+  theme_minimal() +
+  theme(axis.ticks = element_blank(), axis.text.x = element_blank()) +
+  xlab("") + ylab("")
 
 ```
 
