@@ -890,11 +890,11 @@ write.table(meth_mirna_res, "../../data/miRNA-meth_mixedEffect_netowrk.tsv", quo
 res <- File('../../data/miRNA-meth_mixedEffect_netowrk.tsv',name = 'miRNA-meth network list',parentId = parentId)
 res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
 
-write.table(all_ma, "../../data/miRNA-mRNA_mixedEffect_median_exp_by_group.tsv", quote=F, sep="\t", row.names=F)
+write.table(all_ma, "../../data/miRNA-mRNA_mixedEffect_median_exp_by_group.tsv", quote=F, sep="\t")
 res <- File('../../data/miRNA-mRNA_mixedEffect_median_exp_by_group.tsv',name = 'gene median expression by stage',parentId = parentId)
 res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
 
-write.table(mrna_mirna_res, "../../data/miRNA-mRNA_mixedEffect_gene_annotation.tsv", quote=F, sep="\t", row.names=F)
+write.table(ann_df, "../../data/miRNA-mRNA_mixedEffect_gene_annotation.tsv", quote=F, sep="\t")
 res <- File('../../data/miRNA-mRNA_mixedEffect_gene_annotation.tsv',name = 'gene annotation by methylation and miRNAs',parentId = parentId)
 res <- synStore(res, used = ALL_USED_IDs, activityName=ActivityName, executed=CODE)
 

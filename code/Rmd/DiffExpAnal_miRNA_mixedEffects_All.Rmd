@@ -76,20 +76,10 @@ reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.
 
 ```{r filtering}
 #### Pre processing mRNA expression counts and metadata ####
-metadata_filtered <- 
-  metadata %>%
-  filter(Diffname_short != "") %>%
-  filter(UID %in% colnames(mat)) %>%
-  filter(Cell_Type == "PSC") %>%  
-  filter(C4_Karyotype_Result != "abnormal")
-
-REMOVED_UID <- setdiff(colnames(mat), metadata_filtered$UID)
-metadata <- metadata[metadata_filtered$UID,]
-
-for (nc in setdiff(colnames(metadata), "UID") ) 
-  metadata[,nc] = as.factor(substr(gsub("[^[:alnum:]]", "", metadata[,nc]), 1, 40))
-
-mat <- mat[, metadata$UID]
+processed = clean_and_sync_mirna_tables(metadata, mat, reads, TRUE)
+PROCESSED_COUNTS = processed$count
+METADATA = processed$metadata
+REMOVED_UID = setdiff(metadata$UID, METADATA$UID)
 ```
 
 
@@ -103,7 +93,6 @@ I keep miRNAs that are express >= 10 (after normalization) in 90% of the samples
 That would mean to filtering by group and the put all miRNAs together.
 
 ```{r load-clean}
-processed = clean_and_sync_mirna_tables(metadata, mat, reads, TRUE)
 mat_sub = processed$count$filteredExprMatrix
 meta_sub = processed$metadata
 donor_ID = meta_sub[, "Donor_ID"]

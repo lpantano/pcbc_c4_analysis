@@ -12,6 +12,21 @@ clean_table = function(what, mat, meta_clean){
 }
 
 clean_and_sync_mirna_tables = function(metadata, mat, reads, collapse=FALSE){
+  metadata_filtered <-
+    metadata %>%
+    filter(Diffname_short != "") %>%
+    filter(UID %in% colnames(mat)) %>%
+    filter(Cell_Type == "PSC") %>%
+    filter(C4_Karyotype_Result != "abnormal")
+
+  REMOVED_UID <- setdiff(colnames(mat), metadata_filtered$UID)
+  metadata <- metadata[metadata_filtered$UID,]
+
+  for (nc in setdiff(colnames(metadata), "UID") )
+    metadata[,nc] = as.factor(substr(gsub("[^[:alnum:]]", "", metadata[,nc]), 1, 40))
+
+  mat <- mat[, metadata$UID]
+
   reads = reads[rownames(metadata),]
   keep = ( (reads %>% mutate(samples=rownames(reads)) %>% filter(mirna > 500000 & norm > 0.2))[,"samples"] )
   metadata$size = reads[as.character(row.names(metadata)),"norm"]
