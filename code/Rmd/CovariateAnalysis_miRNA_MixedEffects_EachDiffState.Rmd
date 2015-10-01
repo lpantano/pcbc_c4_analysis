@@ -120,19 +120,10 @@ reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.
 
 ```{r filtering, echo=TRUE}
 #### Pre processing mRNA expression counts and metadata ####
-metadata_filtered <- 
-  metadata %>%
-  filter(Diffname_short != "") %>%
-  filter(UID %in% colnames(mat)) %>%
-  filter(Cell_Type == "PSC") %>%  
-  filter(C4_Karyotype_Result != "abnormal")
-
-REMOVED_UID <- setdiff(colnames(mat), metadata_filtered$UID)
-metadata <- metadata[metadata_filtered$UID,]
-
-for (nc in setdiff(colnames(metadata), "UID") ) 
-  metadata[,nc] = as.factor(substr(gsub("[^[:alnum:]]", "", metadata[,nc]), 1, 40))
-
+processed = clean_and_sync_mirna_tables(metadata, mat, reads)
+PROCESSED_COUNTS = processed$count
+METADATA = processed$metadata
+REMOVED_UID = setdiff(metadata$UID, METADATA$UID)
 ```
 The following `r length(REMOVED_UID)` samples were removed:
 
@@ -140,10 +131,6 @@ The following `r length(REMOVED_UID)` samples were removed:
 
 
 ```{r data.split}
-processed = clean_and_sync_mirna_tables(metadata, mat, reads)
-PROCESSED_COUNTS = processed$count
-METADATA = processed$metadata
-
 # Find inter relation between factor covariates
 COVARIATES = METADATA[,c(FactorCovariates)]
 
