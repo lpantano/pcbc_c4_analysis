@@ -18,7 +18,7 @@ knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heig
 
 ```{r render, echo=FALSE, eval=FALSE}
 library(rmarkdown)
-render("CovariateAnalysis_miRNA_mixedEffects_All.Rmd")
+# render("CovariateAnalysis_miRNA_mixedEffects_All.Rmd")
 ```
 
 

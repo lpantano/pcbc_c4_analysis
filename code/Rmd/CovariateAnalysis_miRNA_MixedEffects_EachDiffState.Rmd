@@ -8,7 +8,7 @@ output: html_document
 
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
-render("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd")
+# render("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd")
 ```
 
 ```{r knitr-render, echo=FALSE}
