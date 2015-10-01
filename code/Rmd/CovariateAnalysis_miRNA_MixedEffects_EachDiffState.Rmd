@@ -116,6 +116,8 @@ reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.
 ### Preprocess data
 * Remove somatic samples and samples with not type.
 * Remove samples with abnormal karyotypes.
+* Remove samples < 500000 reads
+* Remove samples < 20% mapping to miRNAs
 
 
 ```{r filtering, echo=TRUE}
