@@ -328,7 +328,7 @@ DE_FC <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_logFC.tsv',name = 'l
 DE_FC <- synStore(DE_FC, used = ALL_USED_IDs,activityName=activityName, executed=CODE)
 
 DE_PV <- File('../../data/DiffExpAnal_mRNA_mixedEffects_All_adjPval.tsv',name = 'PVAL Differential Expression mixedEffect',parentId = parentId)
-DE_PV <- synStore(DE_FC, used = ALL_USED_IDs,activityName=activityName, executed=CODE)
+DE_PV <- synStore(DE_PV, used = ALL_USED_IDs,activityName=activityName, executed=CODE)
 
 # Store differentially expressed genes for comparison
 write.table(SIG.SETS,file='../../data/DiffExpAnal_miRNA_mixedEffects_All_diffmiRNAs.tsv',sep='\t',row.names=F,quote=F)
