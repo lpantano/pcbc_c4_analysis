@@ -120,15 +120,10 @@ reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.
 
 ```{r filtering, echo=TRUE}
 #### Pre processing mRNA expression counts and metadata ####
-metadata_filtered <- 
-  metadata %>%
-  filter(Diffname_short != "") %>%
-  filter(UID %in% colnames(mat)) %>%
-  filter(Cell_Type == "PSC") %>%  
-  filter(C4_Karyotype_Result != "abnormal")
-
-REMOVED_UID <- setdiff(colnames(mat), metadata_filtered$UID)
-metadata <- metadata[metadata_filtered$UID,]
+processed = clean_and_sync_mirna_tables(metadata, mat, reads, TRUE)
+PROCESSED_COUNTS = processed$count
+METADATA = processed$metadata
+REMOVED_UID = setdiff(metadata$UID, METADATA$UID)
 
 for (nc in setdiff(colnames(metadata), "UID") ) 
   metadata[,nc] = as.factor(substr(gsub("[^[:alnum:]]", "", metadata[,nc]), 1, 40))
@@ -140,10 +135,6 @@ The following `r length(REMOVED_UID)` samples were removed:
 
 
 ```{r data.split}
-processed = clean_and_sync_mirna_tables(metadata, mat, reads)
-PROCESSED_COUNTS = processed$count
-METADATA = processed$metadata
-
 # Find inter relation between factor covariates
 COVARIATES = METADATA[,c(FactorCovariates)]
 
@@ -318,11 +309,10 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
   covariatesEffects = designMat2CovEffects(getCovariatesMap(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM),
                                            residualSigCovars$Effects.significantCovars)
   covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
-    
+  # print(c('Init: ',covariatesEffects,'\n'))
   postAdjustCovars = names(which.max(covariatesEffects))
   DESIGN = dplyr::select(as.data.frame(VOOM.GENE.EXPRESSION.PREADJUSTED[[diffstate]]$DM$design),-starts_with('Donor_ID'))
   colnames(DESIGN) = substr(colnames(DESIGN),1,50)
-  
   loopCount = 0 
   while(length(residualSigCovars$significantCovars)!=0 && loopCount <= 2){
     writeLines(paste('Using following covariates in the model:',
@@ -376,7 +366,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
                                              residualSigCovars$Effects.significantCovars)
     covariatesEffects = covariatesEffects[setdiff(significantCovars,c(postAdjustCovars,'Donor_ID'))]
     
-    # print(covariatesEffects)
+    # print(c("res after loop ",residualSigCovars$significantCovars, "\n"))
     # print(colnames(VOOM.GENE.EXPRESSION.POSTADJUSTED$SC$GENE.EXPRESSION$design))
     postAdjustCovars = c(postAdjustCovars,names(which.max(covariatesEffects)))
     
@@ -441,8 +431,8 @@ sapply(names(VOOM.GENE.EXPRESSION.POSTADJUSTED), function(x) VOOM.GENE.EXPRESSIO
 
 ### Synapse Store
 Store processed cpm counts, covariates, design matrix, and voom adjusted gene expression matrices
-```{r synapsestore, echo=FALSE, include=FALSE, cache=FALSE}
 parentId = "syn4595584"
+```{r synapsestore, echo=FALSE, include=FALSE, cache=FALSE}
 activityName <- 'Covariate Analysis of miRNA data at each diff state with mixed effects'
   
 thisFileName <- 'CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd'

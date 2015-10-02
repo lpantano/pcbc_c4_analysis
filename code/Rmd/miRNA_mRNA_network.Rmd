@@ -16,7 +16,6 @@ Find miRNA-mRNA networks using limma:voom to detect DE features and miRBD v5 for
 
 
 ```{r load}
-
 library(tidyr)
 library(dplyr)
 library(knitr)
@@ -82,13 +81,11 @@ rlog_mrna = read.table(mrna_rlog_obj@filePath, check.names = F, header=T, row.na
 meth_mirna_map_id = "syn4895962"
 meth_mirna_map_obj = synGet(meth_mirna_map_id)
 meth_mirna_map = read.table(meth_mirna_map_obj@filePath, header=F, sep="\t")
-# meth_mirna_map = read.table("../../data/hm450_gene_annotations_mapped_mirna_tss.tsv", header=F, sep="\t")
 names(meth_mirna_map) = c("meth", "mirna")
 
 meth_pval_id = "syn4596513"
 meth_pval_obj = synGet(meth_pval_id)
 meth_pval = read.table(meth_pval_obj@filePath, header=TRUE, sep ="\t", row.names = 1)
-#names(meth_pval) = gsub("vs", "_vs", names(meth_pval))
 
 meth_fc_id = "syn4596511"
 meth_fc_obj = synGet(meth_fc_id)
@@ -168,6 +165,7 @@ meth_gene$ensembl = .convert_to_ensembl_vector(meth_gene$UCSC_RefGene_Name)
 For mRNA and miRNA using adjusted pval < 0.01 and abs(logFC) > 2 and for methylation, abs(logFC) > 0.2 and FDR < 0.05 to get more interactions.
 
 ```{r create-network}
+# MiRNA vs Gene
 network_list = list()
 for (contrast in intersect(unique(mrna_tab$cont), unique(mirna_tab$cont)) ){
     genes_de = mrna_tab %>% filter(cont == contrast )
@@ -183,6 +181,7 @@ for (contrast in intersect(unique(mrna_tab$cont), unique(mirna_tab$cont)) ){
     }
 }
 
+# Methylation vs miRNA
 network_meth_list = list()
 for (contrast in intersect(unique(meth_tab$cont), unique(mirna_tab$cont)) ){
     genes_de = meth_tab %>% filter(cont == contrast )
@@ -198,7 +197,7 @@ for (contrast in intersect(unique(meth_tab$cont), unique(mirna_tab$cont)) ){
     }
 }
 
-
+# Methylation vs genes
 network_meth_gene_list = list()
 for (contrast in intersect(unique(meth_tab$cont), unique(mrna_tab$cont)) ){
     meth_de = meth_tab %>% filter(cont == contrast )
@@ -281,7 +280,8 @@ Steps for each state:
 genes are differentially down-regulated from any other state to this one
 * counts the miRNAs that interact those genes and the ones that are UP are
 the candidates that control those genes that are down. 
-* take the miRNAs that target more genes (top 10, but we can add some stats here to chose better)
+> * take the miRNAs that target more genes (top 10, but we can add some stats here to chose better)
+* take the miRNAs that target more genes. miRNAs were sorted by total number of targeted genes. Sliding windows of 5 miRNAs runs through the list and the ratio between the number of targeted genes from the previous windows was calculated. All miRNAs above the last ratio > 20% are taking as the most important. As well, only of those that targeted < 5% of the total were discarted to avoid noise due to low number of genes. 
 * group these miRNAs if they have many common targets (set to > 50% in common)
 * remove miRNAs that targets < 10% of all the genes and are not group to any other miRNA
 * remove genes that after the 2 previous step have no miRNAs targeting them
@@ -399,8 +399,6 @@ names(.list) = states
     }
   }
   .toyb <- .toy
-  # .toyb[.toy=="None"] = 0
-  # .toyb[.toy > 0] = 1
   .toyb_red = lapply(1:length(.sort_mirna), function(x){
     if ( ! is.null(.pairs[[x]]) ){
       .join = unique(c(names(.sort_mirna)[x],names(.sort_mirna)[.pairs[[x]]]))
@@ -423,13 +421,11 @@ names(.list) = states
   }))
   colnames(.toyb_red) = .names
   .toyb_red = as.data.frame(.toyb_red)
-  #.join = c(names(.sort_mirna)[.others])
-  #.toyb_red$others = rowSums(.toyb[,.join])
-  
+
   .toy_hc = rownames(.toyb_red)
   if (ncol(.toyb_red) > 1){
     cat("columns", ncol(.toyb_red))
-    .toy_hc = hclust(dist(t(.toyb_red), method='binary'))
+    .toy_hc = hclust(dist(t(.toyb_red), method='binary'), method="ward.D2")
   }
   
 
@@ -458,8 +454,16 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   
   # Select top miRNAs that target most genes
   .top_mirna = mrna_mirna_res %>% filter(gene %in% .down_uni & grepl(this_state, contrast)) %>% filter(!is.na(symbol)) %>% group_by(mirna) %>% summarise(times=n()) %>% arrange(desc(times))
+
+  .top_mirna = .top_mirna %>% filter(times>length(.down_uni)*0.05)
+  .n = nrow(.top_mirna)
+  if (.n > 5){
+  .changes = (.top_mirna$times[1:(.n-5)] / .top_mirna$times[3:(.n-3)])
+  .cutoff = sort(which(.changes > 1.20), decreasing = T)[1]
+  }else{.cutoff=.n}
+  # .top_mirna$mirna[1:.cutoff]
   # %>% filter(times > length(.down_uni)*0.05)
-  .top_mirna = as.character(unique(unlist(.top_mirna$mirna[1:10])))
+  .top_mirna = as.character(unique(unlist(.top_mirna$mirna[1:.cutoff])))
   
   # Filter intaractions only with selected genes and in this state
   .filtered_mi = mrna_mirna_res %>% filter(mirna %in% .top_mirna & gene %in% .down_uni & grepl(this_state, contrast)) %>% filter(!is.na(symbol))
@@ -542,11 +546,11 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   if (length(.regulated_meth) > 0){
     .ma_meth = mrna_keep[.regulated_meth, ]
     .ma_hc_meth = hclust(as.dist(1-cor(t(.ma_meth))^2))
-    .all_ma = rbind(.ma[.ma_hc$order ,.states_lvs], .ma_meth[.ma_hc_meth$order ,.states_lvs])
+    .all_ma = rbind(.ma[.ma_hc$order ,levels(.states_lvs)], .ma_meth[.ma_hc_meth$order ,levels(.states_lvs)])
   }else{
     .all_ma = .ma[.ma_hc$order ,.states_lvs]
   }
-  
+  print(dim(.all_ma))
   # Calculate genes not regulated by any
   .unkown = nrow(mrna_keep) - nrow(.all_ma)
   
@@ -600,13 +604,9 @@ colnames(.ma_genes_mirna)= all_used
 ann_colors = .mirna_mrna_ma$cols
 .ann_hc = .mirna_mrna_ma$hc
 
-ann_df = as.data.frame(.ann_red[,.ann_hc$order])
-.all_meth = do.call(rbind, lapply(all_info, function(x){x$ann[,"methylated", drop=FALSE]}))
-ann_df$methylated = "None"
-ann_df[row.names(.all_meth)[!is.na(.all_meth$methylated)], "methylated"] = "Target"
-ann_colors[['methylated']] = c(None="white", Target="black")
+ann_df = as.data.frame(.ann_red)
 
-# Color dark if miRNA is top in the list of that state 
+# Color dark if miRNA is top in the list of that state or gray if not
 .void = lapply(all_info, function(x){
   .m = x$used
   .m = gsub("miR-","",gsub("hsa-","",.m))
@@ -628,6 +628,17 @@ ann_colors[['methylated']] = c(None="white", Target="black")
   }
     
 })
+
+# Clustering annotation only considering Top miRNAs in each state
+.ann_bin_red[as.matrix(ann_df)=="Target"] = 0
+.hc = hclust(dist(t(.ann_bin_red), method='binary'), method="ward.D2")
+ann_df = ann_df[, .hc$order]
+
+# Add methylation information
+.all_meth = unlist(sapply(all_info, function(x){x$meth_used}))
+ann_df$methylated = "None"
+ann_df[.all_meth, "methylated"] = "Target"
+ann_colors[['methylated']] = c(None="white", Target="black")
 
 # Choose blak as top miRNA or methylated
 ann_colors = lapply(ann_colors,function(x){  c(x, Top10="black") })
@@ -683,16 +694,14 @@ sapply(all_info,function(x){
 
 
 ```{r mirna-exp-heatmap}
-
-
-meth_exp = sapply(as.character(levels(.states_lvs)), function(this_state){
-      print(this_state)
-      if (this_state %in% c("MESO15", "MESO30") ){
-        return(NA)
-      }
-      cg_probes = as.character(unique(all_info[[this_state]]$meth_probes[,"Name"]))
-      median(rowMedians(as.matrix(rlog_meth[cg_probes, meth_metadata[meth_metadata$UID %in% names(rlog_meth) & meth_metadata$Diffname_short==this_state, "UID"], drop=FALSE])))
-})
+# meth_exp = sapply(as.character(levels(.states_lvs)), function(this_state){
+#       print(this_state)
+#       if (this_state %in% c("MESO15", "MESO30") ){
+#         return(NA)
+#       }
+#       cg_probes = as.character(unique(all_info[[this_state]]$meth_probes[,"Name"]))
+#       median(rowMedians(as.matrix(rlog_meth[cg_probes, meth_metadata[meth_metadata$UID %in% names(rlog_meth) & meth_metadata$Diffname_short==this_state, "UID"], drop=FALSE])))
+# })
 
 # Get medium expression by miRNA and state
 mirna_exp = lapply(names(ann_df), function(x){
@@ -727,8 +736,9 @@ rownames(.ma) = colnames(mirna_exp)
 
 gmirna = ggplot(.ma_melt, aes(x=variable, y=state, fill=value)) +
   geom_tile() + 
+  geom_vline(xintercept=seq(0.5,(ncol(.ma)+0.5),1), color="white", size=0.5) + 
   scale_fill_gradient2(na.value = "white",guide=FALSE, high="darkorange3", low="deepskyblue4", mid = "lightyellow", midpoint = 0) +
-  theme_minimal() + theme(plot.margin = unit(c(-1,-0.8,0,0), "lines"),
+  theme_minimal() + theme(plot.margin = unit(c(-1,-0.5,0,0), "lines"),
                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
                           axis.ticks = element_line(color="white"), axis.text.y=element_blank(),             
                           axis.text.x = element_text(angle=90, size=9, hjust = 1, vjust=0.5)) +
@@ -745,7 +755,7 @@ gmrna = ggplot(.mrna_melt, aes(y=gene, x=variable, fill=value)) +
   geom_tile() + 
   scale_fill_gradient2(guide=FALSE, high="darkorange3", low="deepskyblue4", mid = "lightyellow", midpoint = 0) +
   geom_hline(yintercept=nrow(.ma_mrna) - gaps, color="white", size=2) + 
-  theme_minimal() + theme(plot.margin = unit(c(0,0.8,-0.5,-0.5), "cm"),
+  theme_minimal() + theme(plot.margin = unit(c(0,0.5,-0.5,-0.5), "cm"),
                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
                           axis.ticks = element_blank(), axis.text.y = element_blank(),
                           axis.text.x = element_blank()) +
@@ -759,6 +769,7 @@ gmrna = ggplot(.mrna_melt, aes(y=gene, x=variable, fill=value)) +
 
 gann = ggplot(.ann_melt, aes(y=gene, x=variable, fill=value)) +
   geom_tile(size=1) + 
+  geom_vline(xintercept=seq(0.5,(ncol(.ma)+0.5),1), color="white", size=1) +
   scale_fill_manual(values = c("azure", "grey", "black"), guide=FALSE) +
   geom_hline(yintercept=nrow(all_ma) - gaps, color="white", size=2) + 
   theme_minimal() + theme(plot.margin = unit(c(0,-0.5,-0.5,0), "cm"),
@@ -768,19 +779,22 @@ gann = ggplot(.ann_melt, aes(y=gene, x=variable, fill=value)) +
   xlab("") + ylab("")
 
 # Labels for heatmaps with each state
-axis_df = data.frame(x=1:7, y =1:7, text=colnames(.ma_mrna))
+# select the longest label of the mirna plot to align this one at the bottom
+.longest_name = short_minra_names[which.max(as.vector(sapply(short_minra_names,nchar)))[1]]
+axis_df = data.frame(x=1:ncol(.ma_mrna), y =1:ncol(.ma_mrna), text=colnames(.ma_mrna))
 axisPlot <- ggplot(axis_df, aes(x=x,y=y, fill="white")) +
   geom_tile()+
   geom_text(aes(label = text), size=3) +
-  scale_fill_manual(guide=FALSE, values = "white") + 
+  scale_fill_manual(guide=FALSE, values = "azure") +
+  xlab(.longest_name) +
   theme(
-    plot.margin = unit(c(-0.8,0.4,4.1,-0.5), "cm"),
+    plot.margin = unit(c(-1,-0.2,0,-0.9), "cm"),
     plot.background = element_blank(), 
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(), 
     panel.border = element_blank(),
     panel.background = element_blank(),
-    axis.title.x = element_blank(),
+    axis.title.x = element_text(color="white",angle=90, size=9),
     axis.title.y = element_blank(),
     axis.text.x = element_blank(), 
     axis.text.y = element_blank(),
@@ -791,10 +805,13 @@ axisPlot <- ggplot(axis_df, aes(x=x,y=y, fill="white")) +
 
 # Composition
 library("gridExtra")
-#pdf("../../data/omics.pdf", paper = "a4r",pointsize = 9, width = 700)
 grid.arrange(gann, gmrna, gmirna, axisPlot, padding=0,
         ncol=2, nrow=2, widths=c(4, 3), heights=c(4, 4), clip=TRUE)
-#dev.off()
+
+pdf("../../data/omics.pdf", paper = "a4r",pointsize = 9, width = 700)
+grid.arrange(gann, gmrna, gmirna, axisPlot, padding=0,
+        ncol=2, nrow=2, widths=c(4, 3), heights=c(4, 4), clip=TRUE)
+dev.off()
 ```
 
 ```{r store, eval=FALSE}
