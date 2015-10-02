@@ -8,7 +8,7 @@ output: html_document
 
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
-render("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd")
+# render("~/repos/pcbc_c4_analysis/code/Rmd/CovariateAnalysis_miRNA_MixedEffects_EachDiffState.Rmd")
 ```
 
 ```{r knitr-render, echo=FALSE}
@@ -116,18 +116,16 @@ reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.
 ### Preprocess data
 * Remove somatic samples and samples with not type.
 * Remove samples with abnormal karyotypes.
+* Remove samples < 500000 reads
+* Remove samples < 20% mapping to miRNAs
 
 
 ```{r filtering, echo=TRUE}
 #### Pre processing mRNA expression counts and metadata ####
-processed = clean_and_sync_mirna_tables(metadata, mat, reads, TRUE)
+processed = clean_and_sync_mirna_tables(metadata, mat, reads)
 PROCESSED_COUNTS = processed$count
 METADATA = processed$metadata
 REMOVED_UID = setdiff(metadata$UID, METADATA$UID)
-
-for (nc in setdiff(colnames(metadata), "UID") ) 
-  metadata[,nc] = as.factor(substr(gsub("[^[:alnum:]]", "", metadata[,nc]), 1, 40))
-
 ```
 The following `r length(REMOVED_UID)` samples were removed:
 
