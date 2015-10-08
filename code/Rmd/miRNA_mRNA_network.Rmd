@@ -8,7 +8,7 @@ output: html_document
 ```{r knitr,eval=F,echo=F}
 library(rmarkdown)
 library(knitrBootstrap)
-render("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
+# render("~/repos/pcbc_c4_analysis/code/Rmd/miRNA_mRNA_network.Rmd", output_dir = "~/Dropbox/Public/hsph/pcbc")
 ```
 
 
@@ -302,6 +302,19 @@ states = c("DE", "SC", "EB", "ECTO", "MESO5", "MESO15", "MESO30")
 }
 
 
+.name2symbol = function(x, out="list"){
+    require(org.Hs.eg.db)
+    symbol = AnnotationDbi::select(org.Hs.eg.db, as.character(x), "SYMBOL", keytype="ENSEMBL")
+    symbol = symbol %>% distinct(SYMBOL)
+    if (out=="table"){
+        idx = match(as.character(x), symbol$ENSEMBL)
+        symbol = symbol[idx,]
+        symbol$SYMBOL[is.na(symbol$ENSEMBL)] = symbol$ENSEMBL[is.na(symbol$ENSEMBL)]
+        return(symbol$SYMBOL)
+      }
+    symbol$SYMBOL[!is.na(symbol$SYMBOL)]
+}
+
 mrna_mirna_res$symbol = .name2symbol(mrna_mirna_res$gene, out='table')
 meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
 
@@ -330,7 +343,7 @@ meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
   .genes_meth = as.character(.genes_meth_counts$genes)
   .all = unique(c(.genes_mirna, .genes_meth))
   .mirna = mrna_mirna_res %>% filter(grepl(state,contrast) & gene %in% .all) %>% 
-    distinct(gene,mirna) %>% group_by(mirna) %>% summarise(times=n()) %>% arrange(desc(times))
+    distinct(gene,mirna) %>% group_by(mirna) %>% summarise(times=n()) %>% dplyr::arrange(desc(times))
   .meth = meth_mrna_res %>% filter(grepl(state,contrast) & ensembl %in% .all) %>% 
     distinct(ensembl,Name) 
   
@@ -341,19 +354,6 @@ meth_mrna_res$symbol = .name2symbol(meth_mrna_res$ensembl, out='table')
 
 names(.list) = states
 
-
-.name2symbol = function(x, out="list"){
-    require(org.Hs.eg.db)
-    symbol = AnnotationDbi::select(org.Hs.eg.db, as.character(x), "SYMBOL", keytype="ENSEMBL")
-    symbol = symbol %>% distinct(SYMBOL)
-    if (out=="table"){
-        idx = match(as.character(x), symbol$ENSEMBL)
-        symbol = symbol[idx,]
-        symbol$SYMBOL[is.na(symbol$ENSEMBL)] = symbol$ENSEMBL[is.na(symbol$ENSEMBL)]
-        return(symbol$SYMBOL)
-      }
-    symbol$SYMBOL[!is.na(symbol$SYMBOL)]
-}
 
 # .up_genes = as.character(unlist(unique(lapply(.list, function(x){x$ensembl}))))
 ```
@@ -453,7 +453,7 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   .down_uni = setdiff(setdiff(.down_genes, .all_genes_mi), .all_genes_meth)
   
   # Select top miRNAs that target most genes
-  .top_mirna = mrna_mirna_res %>% filter(gene %in% .down_uni & grepl(this_state, contrast)) %>% filter(!is.na(symbol)) %>% group_by(mirna) %>% summarise(times=n()) %>% arrange(desc(times))
+  .top_mirna = mrna_mirna_res %>% filter(gene %in% .down_uni & grepl(this_state, contrast)) %>% filter(!is.na(symbol)) %>% group_by(mirna) %>% summarise(times=n()) %>% dplyr::arrange(desc(times))
 
   .top_mirna = .top_mirna %>% filter(times>length(.down_uni)*0.05)
   .n = nrow(.top_mirna)
@@ -770,7 +770,7 @@ gmrna = ggplot(.mrna_melt, aes(y=gene, x=variable, fill=value)) +
 gann = ggplot(.ann_melt, aes(y=gene, x=variable, fill=value)) +
   geom_tile(size=1) + 
   geom_vline(xintercept=seq(0.5,(ncol(.ma)+0.5),1), color="white", size=1) +
-  scale_fill_manual(values = c("azure", "grey", "black"), guide=FALSE) +
+  scale_fill_manual(values = c("azure", "black", "grey"), guide=FALSE) +
   geom_hline(yintercept=nrow(all_ma) - gaps, color="white", size=2) + 
   theme_minimal() + theme(plot.margin = unit(c(0,-0.5,-0.5,0), "cm"),
                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
