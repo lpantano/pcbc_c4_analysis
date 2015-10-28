@@ -328,16 +328,18 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
     CORRELATION = duplicateCorrelation(GENE.EXPRESSION, 
                                        design = DM1$design,
                                        block = COVARIATES$Donor_ID)
-    if(abs(CORRELATION$cor) == 1 || abs(CORRELATION$cor) == 0){
+    num_donor = unlist(table(COVARIATES$Donor_ID))
+    if((CORRELATION$consensus.cor) <= 0 || abs(CORRELATION$consensus.cor) == 1
+       # || sum(num_donor[num_donor!=1]) + 2 < ncol(DM1$design) 
+       ){
       writeLines('Random effects correlation cannot be estimated')
       break
     }
-    
     # Estimate sample weights with correlation efects
     GENE.EXPRESSION = voom(PROCESSED_COUNTS[[diffstate]]$filteredExprMatrix, 
                            design = DM1$design,
-                           block = COVARIATES$Donor_ID,
-                           correlation = CORRELATION$consensus.cor,
+                           #block = COVARIATES$Donor_ID,
+                           #correlation = CORRELATION$consensus.cor,
                            plot=F)
     
     # Fit linear model with chosen design
@@ -351,7 +353,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
     # Residual covariates to choose from
     residCovars <- setdiff(c(FactorCovariates,ContCovariates), postAdjustCovars)
     
-    # Find PC of residual gene expression and significant covariates that are highly correlated with PCs    
+    # Find PC of residual gene expression and significant covariates that are highly correlated with PCs 
     residualSigCovars = runPCAandPlotCorrelations(RESIDUAL.GENE.EXPRESSION, 
                                                   DESIGN,
                                                   'all adjusted design(voom-normalized)',
@@ -420,6 +422,7 @@ iterativeNormalisation <- function(COVARIATES, PROCESSED_COUNTS, VOOM.GENE.EXPRE
 }  
 
 VOOM.GENE.EXPRESSION.POSTADJUSTED = lapply(COVARIATES, iterativeNormalisation, PROCESSED_COUNTS, VOOM.GENE.EXPRESSION.PREADJUSTED, PREADJUSTED.COVARIATES)
+
 ```
 
 ```{r show-postadjusted}
