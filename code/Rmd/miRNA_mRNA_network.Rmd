@@ -460,6 +460,8 @@ all_info = lapply(as.character(levels(.states_lvs)), function(this_state){
   if (.n > 5){
   .changes = (.top_mirna$times[1:(.n-5)] / .top_mirna$times[3:(.n-3)])
   .cutoff = sort(which(.changes > 1.20), decreasing = T)[1]
+    if (is.na(.cutoff))
+      .cutoff = sort(which(.changes > 1.10), decreasing = T)[1]
   }else{.cutoff=.n}
   # .top_mirna$mirna[1:.cutoff]
   # %>% filter(times > length(.down_uni)*0.05)
@@ -770,7 +772,7 @@ gmrna = ggplot(.mrna_melt, aes(y=gene, x=variable, fill=value)) +
 gann = ggplot(.ann_melt, aes(y=gene, x=variable, fill=value)) +
   geom_tile(size=1) + 
   geom_vline(xintercept=seq(0.5,(ncol(.ma)+0.5),1), color="white", size=1) +
-  scale_fill_manual(values = c("azure", "black", "grey"), guide=FALSE) +
+  scale_fill_manual(values = c("azure", "grey", "black"), guide=FALSE) +
   geom_hline(yintercept=nrow(all_ma) - gaps, color="white", size=2) + 
   theme_minimal() + theme(plot.margin = unit(c(0,-0.5,-0.5,0), "cm"),
                           panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
