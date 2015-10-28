@@ -56,7 +56,7 @@ synapseLogin()
 Just make sure the tables are sync, same order for samples
 
 ```{r getdata, include=FALSE}
-COVARIATES_FOLDER = "syn4595584"
+COVARIATES_FOLDER = "syn5014476"
 All.Files = synQuery(paste0('select * from file where parentId == "',COVARIATES_FOLDER,'"'))
 DiffState = list(DE = 'DE', MESO5 = 'MESO5', EB = 'EB', SC = 'SC')
 FactorCovariates = c('Diffname_short', 'run', 'lane', 'Cell_Line_Type', 'Cell_Line_of_Origin', 'Tissue_of_Origin', 'Reprogramming_Gene_Combination', 'Culture_Conditions', 'Donor_Life_Stage', 'Gender', 'Originating_Lab', 'Donor_ID', 'Cell_Type_of_Origin_Level2', 'Reprogramming_Vector_Type')
@@ -310,7 +310,7 @@ ALL_USED_IDs = as.character(unlist(lapply(DATA, function(x){return(x$ALL_USED_ID
 Store files in synapse 
 
 ```{r synapse.store, echo = FALSE}
-parentId = 'syn4614674'
+parentId = 'syn5014587'
 activityName='Differential Expression Analysis of miRNA data with mixed effects model at each differentiation stages'
   
 thisFileName <- 'DiffExpAnal_miRNA_mixedEffects_EachDiffState_V2.Rmd'
