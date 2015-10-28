@@ -64,11 +64,11 @@ metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
 metadata = metadata_obj@values %>% distinct(UID)
 row.names(metadata) = metadata$UID
 
-mat_id = "syn3355993"
+mat_id = "syn5014443"
 mat_obj =  synGet(id=mat_id)
 mat = read.table(mat_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
 
-reads_id = "syn3355994"
+reads_id = "syn5014445"
 reads_obj =  synGet(id=reads_id)
 reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
 
@@ -305,7 +305,7 @@ write.table(voom_mat$E, "../../data/miRNA_voom_Mat.tsv", quote=F, sep="\t")
 
 
 ```{r store, echo=FALSE, eval=FALSE}
-parentId = "syn4594275"
+parentId = "syn5014575"
 activityName = 'miRNA mixedEffet Differential Expression'
 ALL_USED_IDs <- c(metadata_id, reads_id, mat_id)
 
