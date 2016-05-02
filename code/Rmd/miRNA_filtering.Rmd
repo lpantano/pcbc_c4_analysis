@@ -1,0 +1,86 @@
+---
+output:
+  knitrBootstrap::bootstrap_document:
+    theme: readable
+    highlight: zenburn
+    theme.chooser: TRUE
+    highlight.chooser: TRUE
+  html_document:
+    toc: true
+    highlight: zenburn
+---
+
+```{r knitr-report, echo=FALSE}
+knitr::opts_chunk$set(tidy=TRUE, highlight=TRUE, dev="png", fig.width=9,fig.heigh=9,
+               cache=FALSE, highlight=TRUE, autodep=TRUE, warning=FALSE, error=FALSE,
+               message=FALSE, prompt=TRUE, comment='', fig.cap='',
+               bootstrap.show.code=FALSE, echo=FALSE)
+```
+
+
+# metadata and covariates
+
+```{r meta, cache=TRUE}
+library(synapseClient)
+
+synapseLogin()
+
+metadata_id = "syn3219876"
+metadata_obj = synTableQuery(paste('SELECT * FROM',metadata_id,sep=' '))
+metadata = metadata_obj@values %>% distinct(UID)
+row.names(metadata) = metadata$UID
+
+mat_id = "syn3355993"
+mat_obj =  synGet(id=mat_id)
+mat = read.table(mat_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
+
+reads_id = "syn3355994"
+reads_obj =  synGet(id=reads_id)
+reads = read.table(reads_obj@filePath, check.names = F, header=T, sep="\t", row.names=1)
+
+```
+
+```{r filtering}
+groups = c("SC", "DE", "EB", "ECTO", "MESO-5", "MESO-15", "MESO-30")
+keep = metadata$Diffname_short %in% groups
+mat_clean = mat[,intersect(metadata$UID[keep], names(mat))]
+```
+
+```{r save, eval=FALSE}
+write.table(mat_clean, "~/data/mirna_counts.tsv", sep="\t", quote=FALSE)
+write.table(reads[names(mat_clean),], "~/data/mirna_reads.tsv", sep="\t", quote=FALSE)
+```
+
+
+```{r store, echo=FALSE, eval=FALSE}
+parentId = "syn5014441"
+activityName = 'Remove samples not being in any important group'
+ALL_USED_IDs <- c(metadata_id, reads_id, mat_id)
+
+library(rGithubClient)
+# Github link
+thisFileName = "miRNA_filtering.Rmd"
+thisRepo <- getRepo(repository = "lpantano/pcbc_c4_analysis", 
+                    ref="branch", 
+                    refName='master')
+
+thisFile <- getPermlink(repository = thisRepo,
+                        repositoryPath=paste0('code/Rmd/', thisFileName))
+
+CODE <- File(thisFileName,name = activityName, parentId = parentId)
+CODE <- synStore(CODE, used = ALL_USED_IDs, activityName=activityName, executed=thisFile)
+
+mirna_counts <- File('../../data/mirna_counts.tsv', parentId = parentId)
+mirna_counts <- synStore(mirna_counts, used = ALL_USED_IDs, activityName=activityName, executed=CODE, )
+mirna_reads <- File('../../data/mirna_reads.tsv', parentId = parentId)
+mirna_reads <- synStore(mirna_reads, used = ALL_USED_IDs, activityName=activityName, executed=CODE, )
+
+```
+
+```{r render-synapsy, eval=FALSE, echo=FALSE}
+devtools::source_gist("6117476")
+knit2synapse("~/repos/pcbc_c4_analysis/code/Rmd/DiffExpAnal_miRNA_mixedEffects_All.Rmd",
+             owner=CODE@properties$id,
+             overwrite=TRUE)
+```
+
